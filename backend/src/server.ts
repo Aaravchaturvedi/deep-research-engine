@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import { prisma } from "./prisma/client";
 import authRoutes from "./routes/auth.routes";
+import chatRoutes from "./routes/chat.routes";
 import { requireAuth, AuthRequest } from "./middleware/auth.middleware";
 
 dotenv.config();
@@ -18,7 +19,9 @@ app.get("/health", async (_req, res) => {
   res.json({ status: "ok", userCount });
 });
 
+
 app.use("/auth", authRoutes);
+app.use("/chat", chatRoutes);
 
 app.get("/me", requireAuth, async (req: AuthRequest, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.userId } });

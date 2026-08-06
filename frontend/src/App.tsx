@@ -1,11 +1,8 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import ChatPage from "./pages/ChatPage";
 import ProtectedRoute from "./components/ProtectedRoute";
-
-function ChatPlaceholder() {
-  return <div className="p-8">Chat page — built on Day 3</div>;
-}
 
 export default function App() {
   return (
@@ -17,7 +14,7 @@ export default function App() {
           path="/chat"
           element={
             <ProtectedRoute>
-              <ChatPlaceholder />
+              <ChatPage />  
             </ProtectedRoute>
           }
         />
