@@ -5,16 +5,24 @@ interface ChatMessage {
   content: string;
 }
 
+interface SessionSummary {
+  id: string;
+  title: string;
+  updatedAt: string;
+}
+
 interface ChatState {
   sessionId: string | null;
   messages: ChatMessage[];
   loading: boolean;
+  sessions: SessionSummary[];
 }
 
 const initialState: ChatState = {
   sessionId: null,
   messages: [],
   loading: false,
+  sessions: [],
 };
 
 const chatSlice = createSlice({
@@ -30,8 +38,29 @@ const chatSlice = createSlice({
     setLoading: (state, action: PayloadAction<boolean>) => {
       state.loading = action.payload;
     },
+    setSessions: (state, action: PayloadAction<SessionSummary[]>) => {
+      state.sessions = action.payload;
+    },
+    loadSession: (
+      state,
+      action: PayloadAction<{ sessionId: string; messages: ChatMessage[] }>,
+    ) => {
+      state.sessionId = action.payload.sessionId;
+      state.messages = action.payload.messages;
+    },
+    startNewChat: (state) => {
+      state.sessionId = null;
+      state.messages = [];
+    },
   },
 });
 
-export const { addMessage, setSessionId, setLoading } = chatSlice.actions;
+export const {
+  addMessage,
+  setSessionId,
+  setLoading,
+  setSessions,
+  loadSession,
+  startNewChat,
+} = chatSlice.actions;
 export default chatSlice.reducer;
