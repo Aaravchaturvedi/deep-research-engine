@@ -40,14 +40,28 @@ export function registerChatSocket(io: Server) {
           socket.emit("chat:session", { sessionId: session.id });
         }
 
+        // 1. Save the user's new message
         await prisma.message.create({
           data: { sessionId: session.id, role: "user", content: message },
         });
 
-        const model = genAI.getGenerativeModel({
-          model: "gemini-3.5-flash-lite",
+        // 2. Fetch ALL messages for this session to give Gemini context
+        const history = await prisma.message.findMany({
+          where: { sessionId: session.id },
+          orderBy: { createdAt: "asc" },
         });
-        const result = await model.generateContentStream(message);
+
+        // 3. Format history into Gemini's expected { role, parts } structure
+        // Note: Gemini requires roles to be exactly "user" and "model"
+        const contents = history.map((msg) => ({
+          role: msg.role === "user" ? "user" : "model",
+          parts: [{ text: msg.content }],
+        }));
+
+        const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
+        
+        // 4. Pass the full conversation history to Gemini
+        const result = await model.generateContentStream({ contents });
 
         let fullResponse = "";
         for await (const chunk of result.stream) {
@@ -56,13 +70,12 @@ export function registerChatSocket(io: Server) {
           socket.emit("chat:chunk", { chunk: chunkText });
         }
 
+        // Save the assistant's message
         await prisma.message.create({
-          data: {
-            sessionId: session.id,
-            role: "assistant",
-            content: fullResponse,
-          },
+          data: { sessionId: session.id, role: "assistant", content: fullResponse },
         });
+
+        // Bump updatedAt on the session
         await prisma.chatSession.update({
           where: { id: session.id },
           data: { updatedAt: new Date() },
