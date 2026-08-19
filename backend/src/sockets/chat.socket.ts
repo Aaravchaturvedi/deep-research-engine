@@ -1,7 +1,9 @@
+// backend/src/sockets/chat.socket.ts
 import { Server, Socket } from "socket.io";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { verifyAccessToken } from "../utils/jwt";
 import { prisma } from "../prisma/client";
+import { classifyIntent } from "../utils/intentClassifier"; // <-- Import the classifier
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
 
@@ -40,27 +42,49 @@ export function registerChatSocket(io: Server) {
           socket.emit("chat:session", { sessionId: session.id });
         }
 
-        // 1. Save the user's new message
         await prisma.message.create({
           data: { sessionId: session.id, role: "user", content: message },
         });
 
-        // 2. Fetch ALL messages for this session to give Gemini context
+        // ==========================================
+        //  INTENT CLASSIFICATION
+        // ==========================================
+        const intent = await classifyIntent(message);
+
+        if (intent === "research") {
+          // Placeholder until Day 9 (LangGraph pipeline)
+          const mockResponse = `[Research Mode Triggered]: I would normally spin up the multi-agent pipeline to search the web, scrape documents, and write a cited report for: "${message}". Coming soon!`;
+          
+          // Stream the mock response just to test the UI
+          socket.emit("chat:chunk", { chunk: mockResponse });
+
+          await prisma.message.create({
+            data: { sessionId: session.id, role: "assistant", content: mockResponse },
+          });
+
+          await prisma.chatSession.update({
+            where: { id: session.id },
+            data: { updatedAt: new Date() },
+          });
+
+          socket.emit("chat:done", { fullResponse: mockResponse });
+          return; // Stop here, don't run standard chat
+        }
+
+        // ==========================================
+        // STANDARD CHAT FLOW (Intent: "chat")
+        // ==========================================
         const history = await prisma.message.findMany({
           where: { sessionId: session.id },
           orderBy: { createdAt: "asc" },
         });
 
-        // 3. Format history into Gemini's expected { role, parts } structure
-        // Note: Gemini requires roles to be exactly "user" and "model"
         const contents = history.map((msg) => ({
           role: msg.role === "user" ? "user" : "model",
           parts: [{ text: msg.content }],
         }));
 
         const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
-        
-        // 4. Pass the full conversation history to Gemini
         const result = await model.generateContentStream({ contents });
 
         let fullResponse = "";
@@ -70,12 +94,10 @@ export function registerChatSocket(io: Server) {
           socket.emit("chat:chunk", { chunk: chunkText });
         }
 
-        // Save the assistant's message
         await prisma.message.create({
           data: { sessionId: session.id, role: "assistant", content: fullResponse },
         });
 
-        // Bump updatedAt on the session
         await prisma.chatSession.update({
           where: { id: session.id },
           data: { updatedAt: new Date() },
