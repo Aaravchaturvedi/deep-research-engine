@@ -34,7 +34,7 @@ export async function sendMessage(req: AuthRequest, res: Response) {
 
     // // calling the Groq API to get a response from the assistant
     // const completion = await groq.chat.completions.create({
-    //   model: "llama-3.3-70b-versatile",
+    //   model: "qwen/qwen3.6-27b",
     //   messages: [{ role: "user", content: message }],
     // });
     // const responseText =

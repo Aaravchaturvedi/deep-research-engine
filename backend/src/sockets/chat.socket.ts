@@ -4,6 +4,8 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { verifyAccessToken } from "../utils/jwt";
 import { prisma } from "../prisma/client";
 import { classifyIntent } from "../utils/intentClassifier"; // <-- Import the classifier
+import { streamChatResponse } from "../utils/llmRouter";
+
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
 
@@ -84,12 +86,10 @@ export function registerChatSocket(io: Server) {
           parts: [{ text: msg.content }],
         }));
 
-        const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
-        const result = await model.generateContentStream({ contents });
-
         let fullResponse = "";
-        for await (const chunk of result.stream) {
-          const chunkText = chunk.text();
+
+        //rouetr instead of calling Gemini directly
+        for await ( const chunkText of streamChatResponse(contents)) {
           fullResponse += chunkText;
           socket.emit("chat:chunk", { chunk: chunkText });
         }
