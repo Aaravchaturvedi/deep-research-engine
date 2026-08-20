@@ -5,6 +5,7 @@ import { verifyAccessToken } from "../utils/jwt";
 import { prisma } from "../prisma/client";
 import { classifyIntent } from "../utils/intentClassifier"; // <-- Import the classifier
 import { streamChatResponse } from "../utils/llmRouter";
+import { researchPipeline } from "../research/researchGraph";
 
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
@@ -55,7 +56,25 @@ export function registerChatSocket(io: Server) {
 
         if (intent === "research") {
           // Placeholder until Day 9 (LangGraph pipeline)
-          const mockResponse = `[Research Mode Triggered]: I would normally spin up the multi-agent pipeline to search the web, scrape documents, and write a cited report for: "${message}". Coming soon!`;
+
+          console.log("\n-- STARTING DEEP RESEARCH PIPELINE --");
+
+          const finalState = await researchPipeline.invoke({ query: message,
+            subtasks: [],
+            searchResults: [],
+            scrapedDocs: [],
+            retrievedContext:"",
+            isVerified: false,
+            needsMoreResearch:false,
+            loopCount:1 ,//Start at loop 1
+            draftReport:"",
+            finalReport:"",
+           });
+
+           console.log("\n--PIPELINE COMPLETED --");
+           console.log("Final State:", finalState.finalReport);
+
+          const mockResponse = finalState.finalReport;
           
           // Stream the mock response just to test the UI
           socket.emit("chat:chunk", { chunk: mockResponse });
@@ -88,7 +107,7 @@ export function registerChatSocket(io: Server) {
 
         let fullResponse = "";
 
-        //rouetr instead of calling Gemini directly
+        //route instead of calling Gemini directly
         for await ( const chunkText of streamChatResponse(contents)) {
           fullResponse += chunkText;
           socket.emit("chat:chunk", { chunk: chunkText });
