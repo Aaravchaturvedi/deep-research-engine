@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { type RootState } from "../app/store";
-import { addMessage, setSessionId, setLoading } from "../features/chat/chatSlice";
+import { addMessage, setSessionId, setLoading, toggleSidebar } from "../features/chat/chatSlice"; // <-- Import toggleSidebar
 import { getSocket } from "../lib/socket";
 import Sidebar from "../components/Sidebar";
 import { setSessions } from "../features/chat/chatSlice";
@@ -13,12 +13,11 @@ export default function ChatPage() {
   const dispatch = useDispatch();
   const { messages, sessionId, loading } = useSelector((state: RootState) => state.chat);
   const streamingRef = useRef("");
-
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
-  }
+  };
 
   useEffect(() => {
     scrollToBottom();
@@ -30,7 +29,7 @@ export default function ChatPage() {
     socket.on("chat:session", async ({ sessionId }) => {
       dispatch(setSessionId(sessionId));
       const data = await fetchSessions();
-  dispatch(setSessions(data));
+      dispatch(setSessions(data));
     });
 
     socket.on("chat:chunk", ({ chunk }) => {
@@ -72,7 +71,17 @@ export default function ChatPage() {
   return (
     <div className="flex h-screen">
       <Sidebar />
+      
       <div className="flex flex-col flex-1 h-screen bg-gray-50">
+        
+        {/* NEW: Mobile Header with Hamburger Menu */}
+        <div className="flex items-center gap-3 p-4 border-b bg-white md:hidden">
+          <button onClick={() => dispatch(toggleSidebar())} className="text-gray-700">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <h1 className="font-semibold">Chat</h1>
+        </div>
+
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {messages.map((msg, i) => (
             <div
@@ -96,7 +105,8 @@ export default function ChatPage() {
           )}
           <div ref={messagesEndRef} />
         </div>
-        <div className="p-4 border-t flex gap-2">
+        
+        <div className="p-4 border-t flex gap-2 bg-white">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}

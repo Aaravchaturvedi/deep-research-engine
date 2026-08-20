@@ -16,6 +16,7 @@ interface ChatState {
   messages: ChatMessage[];
   loading: boolean;
   sessions: SessionSummary[];
+  isSidebarOpen: boolean; // property to track sidebar state
 }
 
 const initialState: ChatState = {
@@ -23,6 +24,7 @@ const initialState: ChatState = {
   messages: [],
   loading: false,
   sessions: [],
+  isSidebarOpen: false, // initialize sidebar state
 };
 
 const chatSlice = createSlice({
@@ -52,6 +54,15 @@ const chatSlice = createSlice({
       state.sessionId = null;
       state.messages = [];
     },
+    toggleSidebar: (state) => {
+      state.isSidebarOpen = !state.isSidebarOpen;
+    },
+    closeSidebar: (state) => {
+      state.isSidebarOpen = false;
+    },
+    openSidebar: (state) => {
+      state.isSidebarOpen = true;
+    }
   },
 });
 
@@ -61,6 +72,9 @@ export const {
   setLoading,
   setSessions,
   loadSession,
+  toggleSidebar,
+  closeSidebar,
+  openSidebar,
   startNewChat,
 } = chatSlice.actions;
 export default chatSlice.reducer;
