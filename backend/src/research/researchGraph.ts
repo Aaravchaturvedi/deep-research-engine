@@ -2,6 +2,8 @@
 import { StateGraph, END, START } from "@langchain/langgraph";
 import { Annotation } from "@langchain/langgraph";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import * as cheerio from "cheerio";
+import axios from "axios";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
 // ==========================================
@@ -106,8 +108,50 @@ const searchAgent = async (state: typeof ResearchState.State) => {
 
 
 const scraperAgent = async (state: typeof ResearchState.State) => {
-  console.log("➡️ [Scraper Agent] Processing documents...");
-  return { scrapedDocs: [{ text: "Mock scraped text content." }] };
+  console.log("➡️ [Scraper Agent] Fetching and processing documents...");
+  
+  const scrapedDocs: { url: string, text: string }[] = [];
+
+  for (const result of state.searchResults) {
+    try {
+      // 1. Fetch the HTML from the URL
+      const response = await axios.get(result.url, {
+        timeout: 5000, // 5 second timeout so we don't hang on slow sites
+        headers: { 'User-Agent': 'Mozilla/5.0 (DeepResearchBot)' } // Some sites block default axios agents
+      });
+      
+      const html = response.data;
+      
+      // 2. Load HTML into Cheerio to extract pure text
+      const $ = cheerio.load(html);
+      
+      // Remove script and style tags so they don't pollute our text
+      $("script, style, nav, footer, header, iframe").remove();
+      
+      const text = $("body").text().replace(/\s+/g, " ").trim();
+      
+      // 3. Basic Chunking: Split text into chunks of ~2000 characters
+      const chunkSize = 2000;
+      const chunks = [];
+      for (let i = 0; i < text.length; i += chunkSize) {
+        chunks.push(text.slice(i, i + chunkSize));
+      }
+
+      // Save the chunks along with the URL they came from
+      chunks.forEach((chunk) => {
+        scrapedDocs.push({
+          url: result.url,
+          text: chunk,
+        });
+      });
+
+    } catch (err) {
+      console.error(`⚠️ [Scraper Agent] Failed to scrape ${result.url}`);
+    }
+  }
+
+  console.log(`✅ [Scraper Agent] Extracted ${scrapedDocs.length} text chunks from ${state.searchResults.length} URLs.`);
+  return { scrapedDocs };
 };
 
 const retrievalAgent = async (state: typeof ResearchState.State) => {
