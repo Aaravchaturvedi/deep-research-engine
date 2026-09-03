@@ -1,40 +1,62 @@
-import { GoogleGenerativeAI, TaskType } from "@google/generative-ai";
+// backend/src/research/agents/retrieval.agent.ts
+import { pipeline } from "@xenova/transformers";
 import { randomUUID } from "crypto";
 import { ResearchState } from "../types";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
+// Initialize the local embedding model
+let extractor: any;
+const getExtractor = async () => {
+  if (!extractor) {
+    console.log("Loading local embedding model...");
+    extractor = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
+  }
+  return extractor;
+};
 
 export const retrievalAgent = async (state: typeof ResearchState.State) => {
-  console.log("➡️ [Retrieval Agent] Embedding and retrieving context...");
-  const embeddingModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
+  console.log("➡️ [Retrieval Agent] Embedding and retrieving context (Local Model)...");
+  const extractor = await getExtractor();
+  
   const QDRANT_URL = "http://localhost:6333";
   const COLLECTION_NAME = "research_chunks";
+  const VECTOR_SIZE = 384; // all-MiniLM-L6-v2 outputs 384 dimensions
 
+  // 1. Ensure the Qdrant collection exists (Size 384 for the local model)
   try {
     await fetch(`${QDRANT_URL}/collections/${COLLECTION_NAME}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vectors: { size: 768, distance: "Cosine" } }),
+      body: JSON.stringify({ vectors: { size: VECTOR_SIZE, distance: "Cosine" } }),
     });
   } catch (err) { /* Ignore if exists */ }
 
-  console.log(`Embedding ${state.scrapedDocs.length} chunks in parallel...`);
-  const pointPromises = state.scrapedDocs.map(async (doc) => {
+  // 2. Embed scraped chunks sequentially
+  console.log(`Embedding ${state.scrapedDocs.length} chunks locally...`);
+  const points = [];
+  
+  for (let i = 0; i < state.scrapedDocs.length; i++) {
+    const doc = state.scrapedDocs[i];
     try {
-      const embedResult = await embeddingModel.embedContent({
-        content: { role: "user", parts: [{ text: doc.text }] },
-        taskType: TaskType.RETRIEVAL_DOCUMENT,
-      });
-      return {
+      // Local model embedding
+      const output = await extractor(doc.text, { pooling: "mean", normalize: true });
+      const vector = Array.from(output.data); // Convert to standard array
+
+      points.push({
         id: randomUUID(),
-        vector: embedResult.embedding.values,
-        payload: { text: doc.text, url: doc.url, queryRef: state.query, loopCount: state.loopCount },
-      };
-    } catch (err) { return null; }
-  });
+        vector: vector,
+        payload: {
+          text: doc.text,
+          url: doc.url,
+          queryRef: state.query,
+          loopCount: state.loopCount,
+        },
+      });
+    } catch (err) {
+      console.error(`⚠️ Failed to embed chunk ${i} from ${doc.url}`);
+    }
+  }
 
-  const points = (await Promise.all(pointPromises)).filter((point): point is NonNullable<typeof point> => point !== null);
-
+  // 3. Upsert points to Qdrant
   if (points.length > 0) {
     await fetch(`${QDRANT_URL}/collections/${COLLECTION_NAME}/points`, {
       method: "PUT",
@@ -43,15 +65,19 @@ export const retrievalAgent = async (state: typeof ResearchState.State) => {
     });
   }
 
-  const queryEmbedResult = await embeddingModel.embedContent({
-    content: { role: "user", parts: [{ text: state.query }] },
-    taskType: TaskType.RETRIEVAL_QUERY,
-  });
+  // 4. Embed the user's query locally
+  const queryOutput = await extractor(state.query, { pooling: "mean", normalize: true });
+  const queryVector = Array.from(queryOutput.data);
 
+  // 5. Query Qdrant for the top 5 relevant chunks
   const searchResponse = await fetch(`${QDRANT_URL}/collections/${COLLECTION_NAME}/points/search`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ vector: queryEmbedResult.embedding.values, limit: 5, with_payload: true }),
+    body: JSON.stringify({
+      vector: queryVector,
+      limit: 5,
+      with_payload: true,
+    }),
   });
 
   const searchData = await searchResponse.json() as any;

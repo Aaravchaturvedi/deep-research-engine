@@ -1,5 +1,5 @@
 // backend/src/middleware/rateLimiter.ts
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit"; // 1. Import ipKeyGenerator
 import RedisStore from "rate-limit-redis";
 import { Redis } from "ioredis";
 
@@ -11,12 +11,12 @@ export const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: new RedisStore({
-    sendCommand: (...args: any[]) => redisClient.call(args[0],args.slice(1)) as any,
+    sendCommand: (...args: any[]) => redisClient.call(args[0], args.slice(1)) as any,
   }),
-  keyGenerator: (req) => {
+  keyGenerator: (req, res) => {
     // Rate limit based on the authenticated user's ID
     // @ts-ignore
-    return req.userId || req.ip;
+    return req.userId || ipKeyGenerator(req, res); // 2. Use ipKeyGenerator instead of req.ip
   },
   message: { error: "Too many requests, please slow down." },
 });

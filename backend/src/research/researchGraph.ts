@@ -7,12 +7,9 @@ import { plannerAgent } from "./agents/planner.agent";
 import { searchAgent } from "./agents/search.agent";
 import { scraperAgent } from "./agents/scraper.agent";
 import { retrievalAgent } from "./agents/retrieval.agent";
+import { verificationAgent } from "./agents/verification.agent";
 
-// --- MOCK AGENTS (To be built in upcoming days) ---
-const verificationAgent = async (state: typeof ResearchState.State) => {
-  console.log("➡️ [Verification Agent] Cross-checking facts...");
-  return { isVerified: true };
-};
+// --- MOCK AGENTS (To be built in upcoming days) ---d
 const reflectionAgent = async (state: typeof ResearchState.State) => {
   console.log(`➡️ [Reflection Agent] Evaluating research... (Loop ${state.loopCount})`);
   if (state.loopCount < 2) {
