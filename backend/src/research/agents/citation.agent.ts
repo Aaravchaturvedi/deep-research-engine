@@ -1,7 +1,8 @@
 // backend/src/research/agents/citation.agent.ts
 import { ResearchState } from "../types";
 
-export const citationAgent = async (state: typeof ResearchState.State) => {
+export const citationAgent = async (state: typeof ResearchState.State,config: any) => {
+  config.configurable.socket.emit("research:progress", { step: "Mapping claims to sources and finalizing report..." });
   console.log("➡️ [Citation Agent] Mapping claims to sources and finalizing...");
 
   let draftText = state.draftReport;

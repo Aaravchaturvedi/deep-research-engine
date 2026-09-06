@@ -11,6 +11,7 @@ import MarkdownRenderer from "../components/MarkdownRenderer";
 export default function ChatPage() {
   const [input, setInput] = useState("");
   const [streamingText, setStreamingText] = useState("");
+  const [progressStep, setProgressStep] = useState(""); // <--- ADDED for progress bar
   const dispatch = useDispatch();
   const { messages, sessionId, loading } = useSelector((state: RootState) => state.chat);
   const streamingRef = useRef("");
@@ -38,10 +39,16 @@ export default function ChatPage() {
       setStreamingText(streamingRef.current);
     });
 
+    // <--- ADDED: Listen for research progress updates
+    socket.on("research:progress", (data) => {
+      setProgressStep(data.step);
+    });
+
     socket.on("chat:done", ({ fullResponse }) => {
       dispatch(addMessage({ role: "assistant", content: fullResponse }));
       streamingRef.current = "";
       setStreamingText("");
+      setProgressStep(""); // <--- ADDED: Clear progress when done
       dispatch(setLoading(false));
     });
 
@@ -53,6 +60,7 @@ export default function ChatPage() {
     return () => {
       socket.off("chat:session");
       socket.off("chat:chunk");
+      socket.off("research:progress"); // <--- ADDED: Cleanup
       socket.off("chat:done");
       socket.off("chat:error");
     };
@@ -83,58 +91,65 @@ export default function ChatPage() {
           <h1 className="font-semibold">Chat</h1>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {messages.map((msg, i) => (
-            <div
-              key={i}
-              className={`max-w-2xl w-full flex ${msg.role === "user" ? "justify-end" : ""}`}
-            >
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-3xl mx-auto space-y-4">
+            {messages.map((msg, i) => (
               <div
-                className={`rounded-lg p-4 flex ${
-                  msg.role === "user"
-                    ? "bg-blue-600 text-white max-w-[85%]"
-                    : "bg-white border text-gray-800 w-full"
-                }`}
+                key={i}
+                className={`w-full flex ${msg.role === "user" ? "justify-end" : ""}`}
               >
-                {msg.role === "assistant" ? (
-                  <div className="w-full">
-                    <MarkdownRenderer content={msg.content} />
-                  </div>
-                ) : (
-                  <p className="whitespace-pre-wrap">{msg.content}</p>
-                )}
+                <div
+                  className={`rounded-lg p-4 flex ${
+                    msg.role === "user"
+                      ? "bg-blue-600 text-white max-w-[85%]"
+                      : "bg-white border text-gray-800 w-full"
+                  }`}
+                >
+                  {msg.role === "assistant" ? (
+                    <div className="w-full">
+                      <MarkdownRenderer content={msg.content} />
+                    </div>
+                  ) : (
+                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-          
-          {loading && streamingText && (
-            <div className="max-w-2xl w-full p-4 rounded-lg bg-white border text-gray-800 flex">
-              <div className="w-full">
-                <MarkdownRenderer content={streamingText} />
+            ))}
+
+            {loading && streamingText && (
+              <div className="w-full p-4 rounded-lg bg-white border text-gray-800 flex">
+                <div className="w-full">
+                  <MarkdownRenderer content={streamingText} />
+                </div>
               </div>
-            </div>
-          )}
-          
-          {loading && !streamingText && (
-            <div className="text-gray-400 text-sm">Thinking...</div>
-          )}
-          <div ref={messagesEndRef} />
+            )}
+
+            {loading && !streamingText && (
+              <div className="w-full p-4 rounded-lg bg-white border text-gray-800 flex items-center gap-3">
+                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-sm font-medium text-gray-600 animate-pulse">{progressStep || "Starting pipeline..."}</p>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
         
-        <div className="p-4 border-t flex gap-2 bg-white">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            placeholder="Type a message..."
-            className="flex-1 border rounded px-4 py-2"
-          />
-          <button
-            onClick={handleSend}
-            className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700"
-          >
-            Send
-          </button>
+        <div className="p-4 border-t bg-white">
+          <div className="max-w-3xl mx-auto flex gap-2">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              placeholder="Type a message..."
+              className="flex-1 border rounded px-4 py-2"
+            />
+            <button
+              onClick={handleSend}
+              className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700"
+            >
+              Send
+            </button>
+          </div>
         </div>
       </div>
     </div>

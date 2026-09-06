@@ -4,7 +4,8 @@ import { ResearchState } from "../types";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
 
-export const writerAgent = async (state: typeof ResearchState.State) => {
+export const writerAgent = async (state: typeof ResearchState.State,config: any) => {
+  config.configurable.socket.emit("research:progress", { step: "Drafting structured report..." });
   console.log("➡️ [Writer Agent] Drafting structured report...");
 
   if (!state.retrievedContext || state.retrievedContext.length === 0) {

@@ -4,7 +4,8 @@ import { ResearchState } from "../types";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
 
-export const verificationAgent = async (state: typeof ResearchState.State) => {
+export const verificationAgent = async (state: typeof ResearchState.State,config: any) => {
+  config.configurable.socket.emit("research:progress", { step: "Cross-checking facts across sources..." });
   console.log("➡️ [Verification Agent] Cross-checking facts across sources...");
 
   if (!state.retrievedContext || state.retrievedContext.length === 0) {

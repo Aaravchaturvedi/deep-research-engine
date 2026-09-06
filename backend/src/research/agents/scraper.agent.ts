@@ -2,7 +2,8 @@ import * as cheerio from "cheerio";
 import axios from "axios";
 import { ResearchState } from "../types";
 
-export const scraperAgent = async (state: typeof ResearchState.State) => {
+export const scraperAgent = async (state: typeof ResearchState.State,config: any) => {
+  config.configurable.socket.emit("research:progress", { step: "Fetching and processing documents..." });
   console.log("➡️ [Scraper Agent] Fetching and processing documents...");
   const scrapedDocs: { url: string, text: string }[] = [];
 

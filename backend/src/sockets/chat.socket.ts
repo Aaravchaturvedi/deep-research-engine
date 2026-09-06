@@ -7,7 +7,6 @@ import { classifyIntent } from "../utils/intentClassifier"; // <-- Import the cl
 import { streamChatResponse } from "../utils/llmRouter";
 import { researchPipeline } from "../research/researchGraph";
 
-
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
 
 interface AuthedSocket extends Socket {
@@ -59,28 +58,40 @@ export function registerChatSocket(io: Server) {
 
           console.log("\n-- STARTING DEEP RESEARCH PIPELINE --");
 
-          const finalState = await researchPipeline.invoke({ query: message,
-            subtasks: [],
-            searchResults: [],
-            scrapedDocs: [],
-            retrievedContext:"",
-            isVerified: false,
-            needsMoreResearch:false,
-            loopCount:1 ,//Start at loop 1
-            draftReport:"",
-            finalReport:"",
-           });
+          const finalState = await researchPipeline.invoke(
+            {
+              query: message,
+              subtasks: [],
+              searchResults: [],
+              scrapedDocs: [],
+              retrievedContext: "",
+              isVerified: false,
+              needsMoreResearch: false,
+              loopCount: 1, //Start at loop 1
+              draftReport: "",
+              finalReport: "",
+            },
+            {
+              configurable: {
+                socket: socket, // <--- ADD THIS CONFIG OBJECT
+              },
+            },
+          );
 
-           console.log("\n--PIPELINE COMPLETED --");
-           console.log("Final State:", finalState.finalReport);
+          console.log("\n--PIPELINE COMPLETED --");
+          console.log("Final State:", finalState.finalReport);
 
           const mockResponse = finalState.finalReport;
-          
+
           // Stream the mock response just to test the UI
           socket.emit("chat:chunk", { chunk: mockResponse });
 
           await prisma.message.create({
-            data: { sessionId: session.id, role: "assistant", content: mockResponse },
+            data: {
+              sessionId: session.id,
+              role: "assistant",
+              content: mockResponse,
+            },
           });
 
           await prisma.chatSession.update({
@@ -108,13 +119,17 @@ export function registerChatSocket(io: Server) {
         let fullResponse = "";
 
         //route instead of calling Gemini directly
-        for await ( const chunkText of streamChatResponse(contents)) {
+        for await (const chunkText of streamChatResponse(contents)) {
           fullResponse += chunkText;
           socket.emit("chat:chunk", { chunk: chunkText });
         }
 
         await prisma.message.create({
-          data: { sessionId: session.id, role: "assistant", content: fullResponse },
+          data: {
+            sessionId: session.id,
+            role: "assistant",
+            content: fullResponse,
+          },
         });
 
         await prisma.chatSession.update({

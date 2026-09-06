@@ -13,7 +13,8 @@ const getExtractor = async () => {
   return extractor;
 };
 
-export const retrievalAgent = async (state: typeof ResearchState.State) => {
+export const retrievalAgent = async (state: typeof ResearchState.State,config: any) => {
+  config.configurable.socket.emit("research:progress", { step: "Embedding and retrieving context (Local Model)..." });
   console.log("➡️ [Retrieval Agent] Embedding and retrieving context (Local Model)...");
   const extractor = await getExtractor();
   

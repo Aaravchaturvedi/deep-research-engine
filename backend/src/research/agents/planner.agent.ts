@@ -3,7 +3,8 @@ import { ResearchState } from "../types";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
 
-export const plannerAgent = async (state: typeof ResearchState.State) => {
+export const plannerAgent = async (state: typeof ResearchState.State,config: any) => {
+  config.configurable.socket.emit("research:progress", { step: "Planning research subtasks..." });
   console.log("➡️ [Planner Agent] Breaking down query:", state.query);
   const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
   const prompt = `You are a research planning AI. Break down the following research query into 3 specific, search-engine-friendly subtasks. Return ONLY a JSON array of strings. No markdown. Query: "${state.query}"`;

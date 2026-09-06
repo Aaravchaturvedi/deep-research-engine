@@ -1,6 +1,7 @@
 import { ResearchState } from "../types";
 
-export const searchAgent = async (state: typeof ResearchState.State) => {
+export const searchAgent = async (state: typeof ResearchState.State,config: any) => {
+  config.configurable.socket.emit("research:progress", { step: "Searching web for:" });
   console.log("➡️ [Search Agent] Searching web for:", state.subtasks.join(", "));
   const allResults: any[] = [];
   const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
