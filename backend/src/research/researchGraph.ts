@@ -8,6 +8,8 @@ import { searchAgent } from "./agents/search.agent";
 import { scraperAgent } from "./agents/scraper.agent";
 import { retrievalAgent } from "./agents/retrieval.agent";
 import { verificationAgent } from "./agents/verification.agent";
+import { writerAgent } from "./agents/writer.agent";
+import { citationAgent } from "./agents/citation.agent";
 
 // --- MOCK AGENTS (To be built in upcoming days) ---d
 const reflectionAgent = async (state: typeof ResearchState.State) => {
@@ -18,14 +20,6 @@ const reflectionAgent = async (state: typeof ResearchState.State) => {
   }
   console.log("✅ Reflection: Sufficient information gathered.");
   return { needsMoreResearch: false };
-};
-const writerAgent = async (state: typeof ResearchState.State) => {
-  console.log("➡️ [Writer Agent] Drafting structured report...");
-  return { draftReport: "This is the mock draft of the report based on " + state.retrievedContext };
-};
-const citationAgent = async (state: typeof ResearchState.State) => {
-  console.log("➡️ [Citation Agent] Mapping claims to sources and finalizing...");
-  return { finalReport: state.draftReport + "\n\nCitations: [1] example.com" };
 };
 
 // --- BUILD THE GRAPH ---

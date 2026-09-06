@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { type RootState } from "../app/store";
-import { addMessage, setSessionId, setLoading, toggleSidebar } from "../features/chat/chatSlice"; // <-- Import toggleSidebar
+import { addMessage, setSessionId, setLoading, toggleSidebar } from "../features/chat/chatSlice";
 import { getSocket } from "../lib/socket";
 import Sidebar from "../components/Sidebar";
 import { setSessions } from "../features/chat/chatSlice";
 import { fetchSessions } from "../features/chat/sessionApi";
+import MarkdownRenderer from "../components/MarkdownRenderer";
 
 export default function ChatPage() {
   const [input, setInput] = useState("");
@@ -74,7 +75,7 @@ export default function ChatPage() {
       
       <div className="flex flex-col flex-1 h-screen bg-gray-50">
         
-        {/* NEW: Mobile Header with Hamburger Menu */}
+        {/* Mobile Header with Hamburger Menu */}
         <div className="flex items-center gap-3 p-4 border-b bg-white md:hidden">
           <button onClick={() => dispatch(toggleSidebar())} className="text-gray-700">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -86,20 +87,34 @@ export default function ChatPage() {
           {messages.map((msg, i) => (
             <div
               key={i}
-              className={`max-w-lg p-3 rounded-lg ${
-                msg.role === "user"
-                  ? "bg-blue-600 text-white ml-auto"
-                  : "bg-white border text-gray-800"
-              }`}
+              className={`max-w-2xl w-full flex ${msg.role === "user" ? "justify-end" : ""}`}
             >
-              {msg.content}
+              <div
+                className={`rounded-lg p-4 flex ${
+                  msg.role === "user"
+                    ? "bg-blue-600 text-white max-w-[85%]"
+                    : "bg-white border text-gray-800 w-full"
+                }`}
+              >
+                {msg.role === "assistant" ? (
+                  <div className="w-full">
+                    <MarkdownRenderer content={msg.content} />
+                  </div>
+                ) : (
+                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                )}
+              </div>
             </div>
           ))}
+          
           {loading && streamingText && (
-            <div className="max-w-lg p-3 rounded-lg bg-white border text-gray-800">
-              {streamingText}
+            <div className="max-w-2xl w-full p-4 rounded-lg bg-white border text-gray-800 flex">
+              <div className="w-full">
+                <MarkdownRenderer content={streamingText} />
+              </div>
             </div>
           )}
+          
           {loading && !streamingText && (
             <div className="text-gray-400 text-sm">Thinking...</div>
           )}

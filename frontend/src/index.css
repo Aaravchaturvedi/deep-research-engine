@@ -1,1 +1,4 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography"; /* <--- ADD THIS LINE */
+
+/* ... rest of your css ... */
