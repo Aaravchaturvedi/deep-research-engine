@@ -10,17 +10,7 @@ import { retrievalAgent } from "./agents/retrieval.agent";
 import { verificationAgent } from "./agents/verification.agent";
 import { writerAgent } from "./agents/writer.agent";
 import { citationAgent } from "./agents/citation.agent";
-
-// --- MOCK AGENTS (To be built in upcoming days) ---d
-const reflectionAgent = async (state: typeof ResearchState.State) => {
-  console.log(`➡️ [Reflection Agent] Evaluating research... (Loop ${state.loopCount})`);
-  if (state.loopCount < 2) {
-    console.log("⤴️ Reflection: Information insufficient. Looping back to Search.");
-    return { needsMoreResearch: true, loopCount: state.loopCount + 1 };
-  }
-  console.log("✅ Reflection: Sufficient information gathered.");
-  return { needsMoreResearch: false };
-};
+import { reflectionAgent } from "./agents/reflection.agent";
 
 // --- BUILD THE GRAPH ---
 const workflow = new StateGraph(ResearchState)
