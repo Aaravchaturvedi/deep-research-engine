@@ -14,6 +14,8 @@ import { errorHandler } from "./middleware/errorHandler.middleware";
 import { requireAuth, AuthRequest } from "./middleware/auth.middleware";
 import { registerChatSocket } from "./sockets/chat.socket";
 import sessionRoutes from "./routes/session.routes";
+import uploadRoutes from "./routes/upload.routes";
+
 
 const app = express();
 
@@ -36,6 +38,7 @@ app.use("/api",apiLimiter);
 app.use("/api/auth", authRoutes);
 app.use("/api/chat", chatRoutes); // keep the old REST endpoint as a fallback/for Day 6
 app.use("/api/sessions", sessionRoutes);
+app.use("/api/upload", uploadRoutes);
 
 app.use(errorHandler);
 
