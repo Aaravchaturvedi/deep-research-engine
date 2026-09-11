@@ -1,2 +1,3 @@
-opencode.json
-.playwright-mcp
+node_modules/
+# Local-only Playwright E2E setup (not pushed)
+/e2e/
