@@ -15,6 +15,7 @@ import { requireAuth, AuthRequest } from "./middleware/auth.middleware";
 import { registerChatSocket } from "./sockets/chat.socket";
 import sessionRoutes from "./routes/session.routes";
 import uploadRoutes from "./routes/upload.routes";
+import "./queues/researchQueue"; // boot BullMQ worker (side effect)
 
 
 const app = express();

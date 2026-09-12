@@ -8,6 +8,94 @@ import { setSessions } from "../features/chat/chatSlice";
 import { fetchSessions, fetchSessionMessages } from "../features/chat/sessionApi";
 import { uploadDocument } from "../features/chat/uploadApi";
 import MarkdownRenderer from "../components/MarkdownRenderer";
+import html2pdf from "html2pdf.js";
+
+// Minimal markdown -> HTML for PDF export (the on-screen renderer stays ReactMarkdown).
+function markdownToHtml(markdown: string): string {
+  const escaped = markdown
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  const inline = (s: string) =>
+    s
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|\W)\*([^*\n]+)\*/g, "$1<em>$2</em>")
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+
+  const lines = escaped.split("\n");
+  const out: string[] = [];
+  let listOpen: "ul" | "ol" | null = null;
+  const closeList = () => {
+    if (listOpen) {
+      out.push(listOpen === "ul" ? "</ul>" : "</ol>");
+      listOpen = null;
+    }
+  };
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) {
+      closeList();
+      continue;
+    }
+    if (line.startsWith("### ")) {
+      closeList();
+      out.push(`<h3>${inline(line.slice(4))}</h3>`);
+    } else if (line.startsWith("## ")) {
+      closeList();
+      out.push(`<h2>${inline(line.slice(3))}</h2>`);
+    } else if (line.startsWith("# ")) {
+      closeList();
+      out.push(`<h1>${inline(line.slice(2))}</h1>`);
+    } else if (line.startsWith("&gt; ")) {
+      closeList();
+      out.push(`<blockquote>${inline(line.slice(5))}</blockquote>`);
+    } else if (/^(-|\*) /.test(line)) {
+      if (listOpen !== "ul") {
+        closeList();
+        out.push("<ul>");
+        listOpen = "ul";
+      }
+      out.push(`<li>${inline(line.replace(/^(-|\*) /, ""))}</li>`);
+    } else if (/^\d+\. /.test(line)) {
+      if (listOpen !== "ol") {
+        closeList();
+        out.push("<ol>");
+        listOpen = "ol";
+      }
+      out.push(`<li>${inline(line.replace(/^\d+\. /, ""))}</li>`);
+    } else if (/^(-{3,}|\*{3*})$/.test(line)) {
+      closeList();
+      out.push("<hr/>");
+    } else {
+      closeList();
+      out.push(`<p>${inline(raw.trim())}</p>`);
+    }
+  }
+  closeList();
+  return out.join("");
+}
+
+function handleDownloadPDF(markdownText: string, index: number) {
+  const element = document.createElement("div");
+  element.innerHTML = markdownToHtml(markdownText);
+  element.style.padding = "24px";
+  element.style.fontFamily = "Arial, sans-serif";
+  element.style.color = "#111827";
+  element.style.lineHeight = "1.6";
+  html2pdf()
+    .set({
+      margin: 12,
+      filename: `report-${index + 1}.pdf`,
+      image: { type: "jpeg", quality: 0.95 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+    })
+    .from(element)
+    .save();
+}
 
 export default function ChatPage() {
   const [input, setInput] = useState("");
@@ -140,6 +228,13 @@ export default function ChatPage() {
                   {msg.role === "assistant" ? (
                     <div className="w-full">
                       <MarkdownRenderer content={msg.content} />
+                      <button
+                        onClick={() => handleDownloadPDF(msg.content, i)}
+                        title="Export this report as PDF"
+                        className="mt-3 text-xs font-medium text-blue-600 border border-blue-200 rounded px-3 py-1.5 hover:bg-blue-50"
+                      >
+                        Download PDF
+                      </button>
                     </div>
                   ) : (
                     <p className="whitespace-pre-wrap">{msg.content}</p>

@@ -8,7 +8,8 @@ import { streamChatResponse } from "../utils/llmRouter";
 import { searchSessionDocs } from "../utils/vectorStore";
 import { isWeatherQuery, getWeatherContext, extractLocation } from "../utils/weather";
 import { needsLiveSearch, tavilyLiveSearch, formatTavilyContext } from "../utils/tavily";
-import { researchPipeline } from "../research/researchGraph";
+import { researchQueue } from "../queues/researchQueue";
+import { researchEvents } from "../utils/eventEmitter";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
 
@@ -17,6 +18,24 @@ interface AuthedSocket extends Socket {
 }
 
 export function registerChatSocket(io: Server) {
+  // Bridge worker events back to the originating socket.
+  // Registered once here (not per-connection) to avoid listener leaks.
+  // The worker has no socket handle, so every event carries socketId.
+  researchEvents.removeAllListeners("progress");
+  researchEvents.removeAllListeners("complete");
+  researchEvents.removeAllListeners("failed");
+  researchEvents.on("progress", ({ socketId, step }: any) => {
+    io.to(socketId).emit("research:progress", { step });
+  });
+  researchEvents.on("complete", ({ socketId, fullResponse }: any) => {
+    // Keep frontend contract: one chunk + done (worker already saved to DB).
+    io.to(socketId).emit("chat:chunk", { chunk: fullResponse });
+    io.to(socketId).emit("chat:done", { fullResponse });
+  });
+  researchEvents.on("failed", ({ socketId, error }: any) => {
+    io.to(socketId).emit("chat:error", { error: error || "Research failed" });
+  });
+
   io.use((socket: AuthedSocket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) return next(new Error("No token"));
@@ -57,52 +76,17 @@ export function registerChatSocket(io: Server) {
         const intent = await classifyIntent(message);
 
         if (intent === "research") {
-          // Placeholder until Day 9 (LangGraph pipeline)
+          // Hand off to the background worker; the result comes back
+          // via researchEvents (complete / failed) -> forwarded above.
+          console.log("\n-- QUEUEING DEEP RESEARCH JOB --");
 
-          console.log("\n-- STARTING DEEP RESEARCH PIPELINE --");
-
-          const finalState = await researchPipeline.invoke(
-            {
-              query: message,
-              subtasks: [],
-              searchResults: [],
-              scrapedDocs: [],
-              retrievedContext: "",
-              isVerified: false,
-              needsMoreResearch: false,
-              loopCount: 1, //Start at loop 1
-              draftReport: "",
-              finalReport: "",
-            },
-            {
-              configurable: {
-                socket: socket, // <--- ADD THIS CONFIG OBJECT
-              },
-            },
+          await researchQueue.add(
+            "research",
+            { query: message, sessionId: session.id, socketId: socket.id },
+            { attempts: 1, removeOnComplete: 100, removeOnFail: 100 }
           );
 
-          console.log("\n--PIPELINE COMPLETED --");
-          console.log("Final State:", finalState.finalReport);
-
-          const mockResponse = finalState.finalReport;
-
-          // Stream the mock response just to test the UI
-          socket.emit("chat:chunk", { chunk: mockResponse });
-
-          await prisma.message.create({
-            data: {
-              sessionId: session.id,
-              role: "assistant",
-              content: mockResponse,
-            },
-          });
-
-          await prisma.chatSession.update({
-            where: { id: session.id },
-            data: { updatedAt: new Date() },
-          });
-
-          socket.emit("chat:done", { fullResponse: mockResponse });
+          socket.emit("research:progress", { step: "Research queued, worker picked it up..." });
           return; // Stop here, don't run standard chat
         }
 
