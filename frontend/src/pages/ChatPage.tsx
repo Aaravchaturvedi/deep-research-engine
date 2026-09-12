@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { type RootState } from "../app/store";
-import { addMessage, setSessionId, setLoading, toggleSidebar } from "../features/chat/chatSlice";
+import { addMessage, setSessionId, setLoading, toggleSidebar, loadSession } from "../features/chat/chatSlice";
 import { getSocket } from "../lib/socket";
 import Sidebar from "../components/Sidebar";
 import { setSessions } from "../features/chat/chatSlice";
-import { fetchSessions } from "../features/chat/sessionApi";
+import { fetchSessions, fetchSessionMessages } from "../features/chat/sessionApi";
+import { uploadDocument } from "../features/chat/uploadApi";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 
 export default function ChatPage() {
   const [input, setInput] = useState("");
   const [streamingText, setStreamingText] = useState("");
   const [progressStep, setProgressStep] = useState(""); // <--- ADDED for progress bar
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const dispatch = useDispatch();
   const { messages, sessionId, loading } = useSelector((state: RootState) => state.chat);
   const streamingRef = useRef("");
@@ -77,6 +80,35 @@ export default function ChatPage() {
     socket.emit("chat:message", { message: userMessage, sessionId });
   };
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (!file || uploading) return;
+
+    setUploading(true);
+    dispatch(
+      addMessage({ role: "user", content: `📎 Uploading ${file.name}...` })
+    );
+    try {
+      // Pass the open session so the doc attaches to it instead of
+      // creating a new chat. Backend creates one only when sessionId is null.
+      const result = await uploadDocument(file, sessionId);
+      dispatch(setSessionId(result.sessionId));
+      const data = await fetchSessionMessages(result.sessionId);
+      dispatch(
+        loadSession({ sessionId: data.session.id, messages: data.messages })
+      );
+      const sessions = await fetchSessions();
+      dispatch(setSessions(sessions));
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.error || "Document upload failed. Please try again.";
+      dispatch(addMessage({ role: "assistant", content: `Upload failed: ${msg}` }));
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div className="flex h-screen">
       <Sidebar />
@@ -137,10 +169,28 @@ export default function ChatPage() {
         <div className="p-4 border-t bg-white">
           <div className="max-w-3xl mx-auto flex gap-2">
             <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.txt,.csv"
+              className="hidden"
+              onChange={handleFileSelect}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || loading}
+              title="Upload document (PDF, TXT, CSV)"
+              className="border rounded px-4 py-2 hover:bg-gray-100 disabled:opacity-50"
+            >
+              {uploading ? "⏳" : "📎"}
+            </button>
+            <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
-              placeholder="Type a message..."
+              placeholder={
+                uploading ? "Uploading document..." : "Type a message..."
+              }
+              disabled={uploading}
               className="flex-1 border rounded px-4 py-2"
             />
             <button

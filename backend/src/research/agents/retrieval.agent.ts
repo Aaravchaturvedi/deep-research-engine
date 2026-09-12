@@ -1,46 +1,32 @@
 // backend/src/research/agents/retrieval.agent.ts
-import { pipeline } from "@xenova/transformers";
 import { randomUUID } from "crypto";
 import { ResearchState } from "../types";
-
-// Initialize the local embedding model
-let extractor: any;
-const getExtractor = async () => {
-  if (!extractor) {
-    console.log("Loading local embedding model...");
-    extractor = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
-  }
-  return extractor;
-};
+import {
+  QDRANT_URL,
+  COLLECTION_NAME,
+  ensureCollection,
+  getExtractor,
+  upsertPoints,
+} from "../../utils/vectorStore";
 
 export const retrievalAgent = async (state: typeof ResearchState.State,config: any) => {
   config.configurable.socket.emit("research:progress", { step: "Embedding and retrieving context (Local Model)..." });
   console.log("➡️ [Retrieval Agent] Embedding and retrieving context (Local Model)...");
   const extractor = await getExtractor();
-  
-  const QDRANT_URL = "http://localhost:6333";
-  const COLLECTION_NAME = "research_chunks";
-  const VECTOR_SIZE = 384; // all-MiniLM-L6-v2 outputs 384 dimensions
 
   // 1. Ensure the Qdrant collection exists (Size 384 for the local model)
-  try {
-    await fetch(`${QDRANT_URL}/collections/${COLLECTION_NAME}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vectors: { size: VECTOR_SIZE, distance: "Cosine" } }),
-    });
-  } catch (err) { /* Ignore if exists */ }
+  await ensureCollection();
 
   // 2. Embed scraped chunks sequentially
   console.log(`Embedding ${state.scrapedDocs.length} chunks locally...`);
-  const points = [];
+  const points: { id: string; vector: number[]; payload: Record<string, any> }[] = [];
   
   for (let i = 0; i < state.scrapedDocs.length; i++) {
     const doc = state.scrapedDocs[i];
     try {
       // Local model embedding
       const output = await extractor(doc.text, { pooling: "mean", normalize: true });
-      const vector = Array.from(output.data); // Convert to standard array
+      const vector = Array.from(output.data as Float32Array) as number[];
 
       points.push({
         id: randomUUID(),
@@ -58,13 +44,7 @@ export const retrievalAgent = async (state: typeof ResearchState.State,config: a
   }
 
   // 3. Upsert points to Qdrant
-  if (points.length > 0) {
-    await fetch(`${QDRANT_URL}/collections/${COLLECTION_NAME}/points`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ points }),
-    });
-  }
+  await upsertPoints(points);
 
   // 4. Embed the user's query locally
   const queryOutput = await extractor(state.query, { pooling: "mean", normalize: true });

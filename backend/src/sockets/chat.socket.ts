@@ -5,6 +5,7 @@ import { verifyAccessToken } from "../utils/jwt";
 import { prisma } from "../prisma/client";
 import { classifyIntent } from "../utils/intentClassifier"; // <-- Import the classifier
 import { streamChatResponse } from "../utils/llmRouter";
+import { searchSessionDocs } from "../utils/vectorStore";
 import { researchPipeline } from "../research/researchGraph";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
@@ -105,6 +106,7 @@ export function registerChatSocket(io: Server) {
 
         // ==========================================
         // STANDARD CHAT FLOW (Intent: "chat")
+        // Includes session-filtered document context when a doc was uploaded
         // ==========================================
         const history = await prisma.message.findMany({
           where: { sessionId: session.id },
@@ -115,6 +117,39 @@ export function registerChatSocket(io: Server) {
           role: msg.role === "user" ? "user" : "model",
           parts: [{ text: msg.content }],
         }));
+
+        // Best-effort document retrieval: never break chat if Qdrant is down
+        try {
+          const docHits = await searchSessionDocs(message, session.id, 5);
+          const usable = docHits.filter((h) => h.text && h.text.trim().length > 0);
+          if (usable.length > 0) {
+            const docContext = usable
+              .map((h, i) => `[Doc excerpt ${i + 1} from ${h.url}]\n${h.text}`)
+              .join("\n\n---\n\n");
+            contents.unshift(
+              {
+                role: "user",
+                parts: [
+                  {
+                    text:
+                      `You are answering about the user's uploaded document. ` +
+                      `Use the excerpts below as primary context. If the answer ` +
+                      `is not in the excerpts, say so and fall back to general knowledge.\n\n` +
+                      `${docContext}`,
+                  },
+                ],
+              },
+              {
+                role: "model",
+                parts: [
+                  { text: "Understood. I will prioritize the uploaded document excerpts." },
+                ],
+              }
+            );
+          }
+        } catch (docErr) {
+          console.warn("Doc retrieval skipped:", (docErr as Error).message);
+        }
 
         let fullResponse = "";
 
