@@ -6,6 +6,8 @@ import { prisma } from "../prisma/client";
 import { classifyIntent } from "../utils/intentClassifier"; // <-- Import the classifier
 import { streamChatResponse } from "../utils/llmRouter";
 import { searchSessionDocs } from "../utils/vectorStore";
+import { isWeatherQuery, getWeatherContext, extractLocation } from "../utils/weather";
+import { needsLiveSearch, tavilyLiveSearch, formatTavilyContext } from "../utils/tavily";
 import { researchPipeline } from "../research/researchGraph";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
@@ -149,6 +151,51 @@ export function registerChatSocket(io: Server) {
           }
         } catch (docErr) {
           console.warn("Doc retrieval skipped:", (docErr as Error).message);
+        }
+
+        // ==========================================
+        // LIVE DATA (weather via Open-Meteo, else Tavily web search)
+        // Best-effort: chat must never break if these fail.
+        // ==========================================
+        try {
+          let liveContext: string | null = null;
+
+          if (isWeatherQuery(message)) {
+            try {
+              liveContext = await getWeatherContext(message);
+            } catch (wErr) {
+              console.warn("Weather lookup failed, falling back to Tavily:", (wErr as Error).message);
+            }
+            if (!liveContext) {
+              // No location detected ("weather today?") or Open-Meteo failed:
+              // fall back to Tavily so the user still gets something live.
+              const live = await tavilyLiveSearch(message);
+              if (live && live.hits.length > 0) liveContext = formatTavilyContext(message, live);
+              else if (!extractLocation(message)) {
+                liveContext =
+                  `The user asked about weather but no city/location was detected in: "${message}". ` +
+                  `Ask the user which city they mean, and do not guess weather values.`;
+              }
+            }
+          } else if (needsLiveSearch(message)) {
+            const live = await tavilyLiveSearch(message);
+            if (live && live.hits.length > 0) liveContext = formatTavilyContext(message, live);
+          }
+
+          if (liveContext) {
+            contents.unshift(
+              {
+                role: "user",
+                parts: [{ text: liveContext }],
+              },
+              {
+                role: "model",
+                parts: [{ text: "Understood. I will use the live data above for time-sensitive facts." }],
+              }
+            );
+          }
+        } catch (liveErr) {
+          console.warn("Live context skipped:", (liveErr as Error).message);
         }
 
         let fullResponse = "";
