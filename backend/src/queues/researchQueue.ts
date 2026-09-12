@@ -81,7 +81,11 @@ export const researchWorker = new Worker(
       throw err; // let BullMQ mark the job failed (retry policy applies)
     }
   },
-  { connection: workerConnection }
+  // Research jobs run for MINUTES (LLM calls + scraping), far longer than
+  // BullMQ's 30s default lock. A short lock expires mid-job, and completion
+  // then fails with "Lock mismatch ... moveToFinished". Renew less often,
+  // hold the lock longer, one job at a time.
+  { connection: workerConnection, concurrency: 1, lockDuration: 300000, stalledInterval: 60000 }
 );
 
 researchWorker.on("completed", (job) => {
