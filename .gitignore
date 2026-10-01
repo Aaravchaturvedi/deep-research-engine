@@ -1,3 +1,4 @@
 node_modules/
+dist/
 # Local-only Playwright E2E setup (not pushed)
 /playwright_e2e/

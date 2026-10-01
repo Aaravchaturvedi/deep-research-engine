@@ -21,11 +21,17 @@ import "./queues/researchQueue"; // boot BullMQ worker (side effect)
 const app = express();
 
 const server = http.createServer(app);
+// Comma-separated origins, e.g. "http://localhost,http://localhost:5173".
+// Local `npm run dev` uses :5173; the docker nginx proxy serves on :80.
+const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 const io = new Server(server, {
-  cors: { origin: "http://localhost:5173", credentials: true },
+  cors: { origin: allowedOrigins, credentials: true },
 });
 
-app.use(cors({ origin: "http://localhost:5173", credentials: true }));
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(cookieParser());
 app.use(express.json());
 

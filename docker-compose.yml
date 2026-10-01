@@ -1,0 +1,51 @@
+# Self-contained stack: nginx (:80) -> backend (:5000) + redis + qdrant.
+# Postgres is external (Neon via DATABASE_URL in backend/.env).
+# Only nginx publishes a host port, so this won't clash with any
+# redis/qdrant you already run on the host for local `npm run dev`.
+services:
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    env_file:
+      - ./backend/.env # secrets: DATABASE_URL, JWT_*, GEMINI_*, GROQ_*, TAVILY_*
+    environment:
+      PORT: 5000
+      REDIS_URL: redis://redis:6379
+      QDRANT_URL: http://qdrant:6333
+      CORS_ORIGIN: http://localhost
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+
+  nginx:
+    build:
+      context: .
+      dockerfile: ./nginx/Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  qdrant_storage:
