@@ -1,112 +1,53 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { ChevronsRight, Menu, Plus } from "lucide-react";
 import { type RootState } from "../app/store";
-import { addMessage, setSessionId, setLoading, toggleSidebar, loadSession } from "../features/chat/chatSlice";
+import {
+  addMessage,
+  setSessionId,
+  setLoading,
+  toggleSidebar,
+  toggleSidebarCollapsed,
+  loadSession,
+  startNewChat,
+} from "../features/chat/chatSlice";
+import { setUser } from "../features/auth/authSlice";
+import { fetchMe } from "../features/auth/authApi";
 import { getSocket } from "../lib/socket";
 import Sidebar from "../components/Sidebar";
+import ChatMessage from "../components/ChatMessage";
+import Composer from "../components/Composer";
+import EmptyState from "../components/EmptyState";
+import ProgressStepper from "../components/ProgressStepper";
+import { useToast } from "../components/Toasts";
 import { setSessions } from "../features/chat/chatSlice";
 import { fetchSessions, fetchSessionMessages } from "../features/chat/sessionApi";
 import { uploadDocument } from "../features/chat/uploadApi";
-import MarkdownRenderer from "../components/MarkdownRenderer";
-import html2pdf from "html2pdf.js";
-
-// Minimal markdown -> HTML for PDF export (the on-screen renderer stays ReactMarkdown).
-function markdownToHtml(markdown: string): string {
-  const escaped = markdown
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
-  const inline = (s: string) =>
-    s
-      .replace(/`([^`]+)`/g, "<code>$1</code>")
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/(^|\W)\*([^*\n]+)\*/g, "$1<em>$2</em>")
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
-
-  const lines = escaped.split("\n");
-  const out: string[] = [];
-  let listOpen: "ul" | "ol" | null = null;
-  const closeList = () => {
-    if (listOpen) {
-      out.push(listOpen === "ul" ? "</ul>" : "</ol>");
-      listOpen = null;
-    }
-  };
-
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line) {
-      closeList();
-      continue;
-    }
-    if (line.startsWith("### ")) {
-      closeList();
-      out.push(`<h3>${inline(line.slice(4))}</h3>`);
-    } else if (line.startsWith("## ")) {
-      closeList();
-      out.push(`<h2>${inline(line.slice(3))}</h2>`);
-    } else if (line.startsWith("# ")) {
-      closeList();
-      out.push(`<h1>${inline(line.slice(2))}</h1>`);
-    } else if (line.startsWith("&gt; ")) {
-      closeList();
-      out.push(`<blockquote>${inline(line.slice(5))}</blockquote>`);
-    } else if (/^(-|\*) /.test(line)) {
-      if (listOpen !== "ul") {
-        closeList();
-        out.push("<ul>");
-        listOpen = "ul";
-      }
-      out.push(`<li>${inline(line.replace(/^(-|\*) /, ""))}</li>`);
-    } else if (/^\d+\. /.test(line)) {
-      if (listOpen !== "ol") {
-        closeList();
-        out.push("<ol>");
-        listOpen = "ol";
-      }
-      out.push(`<li>${inline(line.replace(/^\d+\. /, ""))}</li>`);
-    } else if (/^(-{3,}|\*{3*})$/.test(line)) {
-      closeList();
-      out.push("<hr/>");
-    } else {
-      closeList();
-      out.push(`<p>${inline(raw.trim())}</p>`);
-    }
-  }
-  closeList();
-  return out.join("");
-}
-
-function handleDownloadPDF(markdownText: string, index: number) {
-  const element = document.createElement("div");
-  element.innerHTML = markdownToHtml(markdownText);
-  element.style.padding = "24px";
-  element.style.fontFamily = "Arial, sans-serif";
-  element.style.color = "#111827";
-  element.style.lineHeight = "1.6";
-  html2pdf()
-    .set({
-      margin: 12,
-      filename: `report-${index + 1}.pdf`,
-      image: { type: "jpeg", quality: 0.95 },
-      html2canvas: { scale: 2 },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-    })
-    .from(element)
-    .save();
-}
 
 export default function ChatPage() {
   const [input, setInput] = useState("");
   const [streamingText, setStreamingText] = useState("");
-  const [progressStep, setProgressStep] = useState(""); // <--- ADDED for progress bar
+  const [progressStep, setProgressStep] = useState("");
+  const [runStartedAt, setRunStartedAt] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const dispatch = useDispatch();
-  const { messages, sessionId, loading } = useSelector((state: RootState) => state.chat);
+  const { push } = useToast();
+  const { messages, sessionId, loading, sessions, sidebarCollapsed } = useSelector(
+    (state: RootState) => state.chat
+  );
   const streamingRef = useRef("");
+  const ignoreRef = useRef(false); // set on Stop: late events from the killed run are dropped
+  const loadingRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const dragDepth = useRef(0);
+
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
@@ -116,187 +57,323 @@ export default function ChatPage() {
     scrollToBottom();
   }, [messages, streamingText]);
 
+  // Live elapsed timer while a run is in flight.
+  useEffect(() => {
+    if (!loading) return;
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [loading]);
+
+  // Populate the sidebar user card (refresh flow only restores the token).
+  useEffect(() => {
+    fetchMe()
+      .then((u) => dispatch(setUser({ id: u.id, email: u.email, name: u.name })))
+      .catch(() => {});
+  }, [dispatch]);
+
+  const finishRun = useCallback(() => {
+    streamingRef.current = "";
+    setStreamingText("");
+    setProgressStep("");
+    dispatch(setLoading(false));
+  }, [dispatch]);
+
   useEffect(() => {
     const socket = getSocket();
 
     socket.on("chat:session", async ({ sessionId }) => {
       dispatch(setSessionId(sessionId));
-      const data = await fetchSessions();
-      dispatch(setSessions(data));
+      try {
+        const data = await fetchSessions();
+        dispatch(setSessions(data));
+      } catch {
+        /* list refresh is best-effort here */
+      }
     });
 
     socket.on("chat:chunk", ({ chunk }) => {
+      if (ignoreRef.current) return;
       streamingRef.current += chunk;
       setStreamingText(streamingRef.current);
     });
 
-    // <--- ADDED: Listen for research progress updates
     socket.on("research:progress", (data) => {
+      if (ignoreRef.current) return;
       setProgressStep(data.step);
     });
 
     socket.on("chat:done", ({ fullResponse }) => {
+      if (ignoreRef.current) return;
       dispatch(addMessage({ role: "assistant", content: fullResponse }));
-      streamingRef.current = "";
-      setStreamingText("");
-      setProgressStep(""); // <--- ADDED: Clear progress when done
-      dispatch(setLoading(false));
+      finishRun();
     });
 
-    socket.on("chat:error", () => {
-      dispatch(addMessage({ role: "assistant", content: "Something went wrong." }));
-      dispatch(setLoading(false));
+    socket.on("chat:error", ({ error }) => {
+      if (ignoreRef.current) return;
+      dispatch(addMessage({ role: "assistant", content: `Something went wrong: ${error || "please try again."}` }));
+      push("error", "The run failed. Try again.");
+      finishRun();
+    });
+
+    socket.on("chat:stopped", () => {
+      if (!loadingRef.current && !streamingRef.current) return;
+      if (streamingRef.current) {
+        dispatch(
+          addMessage({ role: "assistant", content: `${streamingRef.current}\n\n*Stopped by user.*` })
+        );
+      }
+      finishRun();
+      push("info", "Run stopped.");
     });
 
     return () => {
       socket.off("chat:session");
       socket.off("chat:chunk");
-      socket.off("research:progress"); // <--- ADDED: Cleanup
+      socket.off("research:progress");
       socket.off("chat:done");
       socket.off("chat:error");
+      socket.off("chat:stopped");
     };
-  }, [dispatch]);
+  }, [dispatch, finishRun, push]);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
-    const userMessage = input;
-    setInput("");
-    dispatch(addMessage({ role: "user", content: userMessage }));
-    dispatch(setLoading(true));
+  const sendMessage = useCallback(
+    (text: string) => {
+      const message = text.trim();
+      if (!message || loadingRef.current || uploading) return;
+      ignoreRef.current = false;
+      setInput("");
+      dispatch(addMessage({ role: "user", content: message }));
+      dispatch(setLoading(true));
+      setRunStartedAt(Date.now());
+      setNow(Date.now());
+      setProgressStep("");
+      getSocket().emit("chat:message", { message, sessionId });
+      window.setTimeout(scrollToBottom, 50);
+    },
+    [dispatch, sessionId, uploading]
+  );
 
-    const socket = getSocket();
-    socket.emit("chat:message", { message: userMessage, sessionId });
+  const handleSend = () => sendMessage(input);
+
+  const handleStop = () => {
+    ignoreRef.current = true;
+    getSocket().emit("chat:stop", {});
+    // Optimistic UI: don't wait for the server ack.
+    if (streamingRef.current) {
+      dispatch(
+        addMessage({ role: "assistant", content: `${streamingRef.current}\n\n*Stopped by user.*` })
+      );
+    }
+    finishRun();
   };
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-selecting the same file
-    if (!file || uploading) return;
-
-    setUploading(true);
-    dispatch(
-      addMessage({ role: "user", content: `📎 Uploading ${file.name}...` })
-    );
-    try {
-      // Pass the open session so the doc attaches to it instead of
-      // creating a new chat. Backend creates one only when sessionId is null.
-      const result = await uploadDocument(file, sessionId);
-      dispatch(setSessionId(result.sessionId));
-      const data = await fetchSessionMessages(result.sessionId);
-      dispatch(
-        loadSession({ sessionId: data.session.id, messages: data.messages })
-      );
-      const sessions = await fetchSessions();
-      dispatch(setSessions(sessions));
-    } catch (err: any) {
-      const msg =
-        err?.response?.data?.error || "Document upload failed. Please try again.";
-      dispatch(addMessage({ role: "assistant", content: `Upload failed: ${msg}` }));
-    } finally {
-      setUploading(false);
+  const handleRegenerate = () => {
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (lastUser && !lastUser.content.startsWith("📎 Uploading ")) {
+      sendMessage(lastUser.content);
     }
   };
 
+  const uploadFile = useCallback(
+    async (file: File) => {
+      if (uploading) return;
+      setUploading(true);
+      dispatch(addMessage({ role: "user", content: `📎 Uploading ${file.name}…` }));
+      try {
+        const result = await uploadDocument(file, sessionId);
+        dispatch(setSessionId(result.sessionId));
+        const data = await fetchSessionMessages(result.sessionId);
+        dispatch(loadSession({ sessionId: data.session.id, messages: data.messages }));
+        const list = await fetchSessions();
+        dispatch(setSessions(list));
+        push("success", `"${result.filename}" ready — ${result.chunks} chunks indexed.`);
+    } catch (err: unknown) {
+      const apiError =
+        typeof err === "object" && err !== null && "response" in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
+      const msg = apiError || "Document upload failed. Please try again.";
+        dispatch(addMessage({ role: "assistant", content: `Upload failed: ${msg}` }));
+        push("error", msg);
+      } finally {
+        setUploading(false);
+      }
+    },
+    [dispatch, push, sessionId, uploading]
+  );
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) await uploadFile(file);
+  };
+
+  // Press "/" anywhere to focus the composer.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (e.key === "/" && !["INPUT", "TEXTAREA"].includes(t.tagName)) {
+        e.preventDefault();
+        composerRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const activeTitle =
+    sessions.find((s) => s.id === sessionId)?.title ||
+    (messages.length > 0 ? messages[0].content.slice(0, 42) : "New chat");
+
+  const showEmpty = messages.length === 0 && !loading;
+
   return (
-    <div className="flex h-screen">
+    <div
+      className="flex h-screen overflow-hidden"
+      onDragEnter={(e) => {
+        e.preventDefault();
+        dragDepth.current++;
+        if (e.dataTransfer.types.includes("Files")) setDragging(true);
+      }}
+      onDragOver={(e) => e.preventDefault()}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        if (--dragDepth.current <= 0) {
+          dragDepth.current = 0;
+          setDragging(false);
+        }
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        dragDepth.current = 0;
+        setDragging(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file) void uploadFile(file);
+      }}
+    >
       <Sidebar />
-      
-      <div className="flex flex-col flex-1 h-screen bg-gray-50">
-        
-        {/* Mobile Header with Hamburger Menu */}
-        <div className="flex items-center gap-3 p-4 border-b bg-white md:hidden">
-          <button onClick={() => dispatch(toggleSidebar())} className="text-gray-700">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+
+      <div className="flex min-w-0 flex-1 flex-col bg-slate-50">
+        {/* Header */}
+        <header className="flex items-center gap-2 border-b border-slate-200 bg-white/80 px-3 py-2.5 backdrop-blur sm:px-5">
+          <button
+            onClick={() => dispatch(toggleSidebar())}
+            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 md:hidden"
+            aria-label="Open sidebar"
+          >
+            <Menu className="h-5 w-5" />
           </button>
-          <h1 className="font-semibold">Chat</h1>
-        </div>
+          {sidebarCollapsed && (
+            <button
+              onClick={() => dispatch(toggleSidebarCollapsed())}
+              className="hidden rounded-lg p-2 text-slate-500 hover:bg-slate-100 md:block"
+              aria-label="Expand sidebar"
+              title="Expand sidebar"
+            >
+              <ChevronsRight className="h-5 w-5" />
+            </button>
+          )}
+          <h1 className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800 sm:text-[15px]">
+            {activeTitle}
+          </h1>
+          <button
+            onClick={() => dispatch(startNewChat())}
+            className="flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:border-brand-200 hover:text-brand-700"
+            title="Start a new chat"
+          >
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">New chat</span>
+          </button>
+        </header>
 
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-3xl mx-auto space-y-4">
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`w-full flex ${msg.role === "user" ? "justify-end" : ""}`}
-              >
-                <div
-                  className={`rounded-lg p-4 flex ${
-                    msg.role === "user"
-                      ? "bg-blue-600 text-white max-w-[85%]"
-                      : "bg-white border text-gray-800 w-full"
-                  }`}
-                >
-                  {msg.role === "assistant" ? (
-                    <div className="w-full">
-                      <MarkdownRenderer content={msg.content} />
-                      <button
-                        onClick={() => handleDownloadPDF(msg.content, i)}
-                        title="Export this report as PDF"
-                        className="mt-3 text-xs font-medium text-blue-600 border border-blue-200 rounded px-3 py-1.5 hover:bg-blue-50"
-                      >
-                        Download PDF
-                      </button>
+        {/* Messages */}
+        <div className="nice-scroll flex-1 overflow-y-auto">
+          {showEmpty ? (
+            <EmptyState onSuggest={sendMessage} />
+          ) : (
+            <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6 sm:px-6">
+              {messages.map((msg, i) => (
+                <ChatMessage
+                  key={`${sessionId ?? "new"}-${i}`}
+                  message={msg}
+                  sessionTitle={activeTitle}
+                  onRegenerate={msg.role === "assistant" ? handleRegenerate : undefined}
+                  regenerateDisabled={loading}
+                />
+              ))}
+
+              {loading && streamingText && (
+                <div className="flex w-full gap-3 animate-fade-in">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-white">
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/70 border-t-transparent" />
+                  </span>
+                  <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md border border-slate-200 bg-white px-4 py-3 shadow-[var(--shadow-card)] sm:px-5 sm:py-4">
+                    <div className="text-[15px] leading-relaxed text-slate-800">
+                      {streamingText}
+                      <span className="ml-0.5 inline-block h-4 w-[7px] animate-pulse bg-brand-400 align-middle" />
                     </div>
-                  ) : (
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                  )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )}
 
-            {loading && streamingText && (
-              <div className="w-full p-4 rounded-lg bg-white border text-gray-800 flex">
-                <div className="w-full">
-                  <MarkdownRenderer content={streamingText} />
-                </div>
-              </div>
-            )}
-
-            {loading && !streamingText && (
-              <div className="w-full p-4 rounded-lg bg-white border text-gray-800 flex items-center gap-3">
-                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                <p className="text-sm font-medium text-gray-600 animate-pulse">{progressStep || "Starting pipeline..."}</p>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
+              {loading && !streamingText && (
+                <ProgressStepper step={progressStep} startedAt={runStartedAt} now={now} />
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
         </div>
-        
-        <div className="p-4 border-t bg-white">
-          <div className="max-w-3xl mx-auto flex gap-2">
+
+        {/* Composer */}
+        <div className="border-t border-slate-200 bg-white/80 backdrop-blur">
+          <div className="mx-auto w-full max-w-3xl px-4 py-3 sm:px-6 sm:py-4">
             <input
               ref={fileInputRef}
               type="file"
               accept=".pdf,.txt,.csv"
               className="hidden"
               onChange={handleFileSelect}
+              aria-hidden
+              tabIndex={-1}
             />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading || loading}
-              title="Upload document (PDF, TXT, CSV)"
-              className="border rounded px-4 py-2 hover:bg-gray-100 disabled:opacity-50"
-            >
-              {uploading ? "⏳" : "📎"}
-            </button>
-            <input
+            <Composer
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSend()}
-              placeholder={
-                uploading ? "Uploading document..." : "Type a message..."
-              }
-              disabled={uploading}
-              className="flex-1 border rounded px-4 py-2"
+              onChange={setInput}
+              onSend={handleSend}
+              onStop={handleStop}
+              loading={loading}
+              uploading={uploading}
+              onAttach={() => fileInputRef.current?.click()}
+              composerRef={composerRef}
             />
-            <button
-              onClick={handleSend}
-              className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700"
-            >
-              Send
-            </button>
+            <p className="mt-2 text-center text-xs text-slate-400">
+              Reports cite their sources · Verify important claims before acting on them
+            </p>
           </div>
         </div>
       </div>
+
+      {/* Drag-drop overlay */}
+      {dragging && (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-brand-600/10 p-6 backdrop-blur-[1px]">
+          <div className="flex flex-col items-center gap-3 rounded-3xl border-2 border-dashed border-brand-400 bg-white px-12 py-10 shadow-[var(--shadow-pop)]">
+            <FileIcon />
+            <p className="text-base font-semibold text-slate-900">Drop to upload</p>
+            <p className="text-sm text-slate-500">PDF, TXT or CSV — I’ll index it for Q&amp;A</p>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function FileIcon() {
+  return (
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="stroke-brand-500">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="12" y1="18" x2="12" y2="12" />
+      <polyline points="9 15 12 12 15 15" />
+    </svg>
   );
 }

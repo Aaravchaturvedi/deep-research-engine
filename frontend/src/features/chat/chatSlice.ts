@@ -16,7 +16,8 @@ interface ChatState {
   messages: ChatMessage[];
   loading: boolean;
   sessions: SessionSummary[];
-  isSidebarOpen: boolean; // property to track sidebar state
+  isSidebarOpen: boolean; // mobile drawer
+  sidebarCollapsed: boolean; // desktop collapse
 }
 
 const initialState: ChatState = {
@@ -25,6 +26,7 @@ const initialState: ChatState = {
   loading: false,
   sessions: [],
   isSidebarOpen: false, // initialize sidebar state
+  sidebarCollapsed: false,
 };
 
 const chatSlice = createSlice({
@@ -54,8 +56,22 @@ const chatSlice = createSlice({
       state.sessionId = null;
       state.messages = [];
     },
+    dropSession: (state, action: PayloadAction<string>) => {
+      state.sessions = state.sessions.filter((s) => s.id !== action.payload);
+      if (state.sessionId === action.payload) {
+        state.sessionId = null;
+        state.messages = [];
+      }
+    },
+    applySessionTitle: (state, action: PayloadAction<{ id: string; title: string }>) => {
+      const s = state.sessions.find((x) => x.id === action.payload.id);
+      if (s) s.title = action.payload.title;
+    },
     toggleSidebar: (state) => {
       state.isSidebarOpen = !state.isSidebarOpen;
+    },
+    toggleSidebarCollapsed: (state) => {
+      state.sidebarCollapsed = !state.sidebarCollapsed;
     },
     closeSidebar: (state) => {
       state.isSidebarOpen = false;
@@ -73,8 +89,11 @@ export const {
   setSessions,
   loadSession,
   toggleSidebar,
+  toggleSidebarCollapsed,
   closeSidebar,
   openSidebar,
   startNewChat,
+  dropSession,
+  applySessionTitle,
 } = chatSlice.actions;
 export default chatSlice.reducer;

@@ -63,7 +63,9 @@ export const researchWorker = new Worker(
       const fullResponse = finalState.finalReport || "I could not generate a report on this topic.";
 
       // Persist here — the socket layer only relays, never re-saves.
-      await prisma.message.create({
+      // The created id is forwarded so a cancelled run can roll its
+      // message back instead of leaving a phantom reply.
+      const saved = await prisma.message.create({
         data: { sessionId, role: "assistant", content: fullResponse },
       });
 
@@ -72,7 +74,7 @@ export const researchWorker = new Worker(
         data: { updatedAt: new Date() },
       });
 
-      researchEvents.emit("complete", { socketId, sessionId, fullResponse });
+      researchEvents.emit("complete", { socketId, sessionId, fullResponse, messageId: saved.id });
       return { socketId, sessionId };
     } catch (err) {
       const message = (err as Error).message || "Research pipeline failed";

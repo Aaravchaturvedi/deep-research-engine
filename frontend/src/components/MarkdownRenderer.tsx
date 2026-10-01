@@ -1,82 +1,162 @@
+import { useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Check, Copy } from "lucide-react";
+import { copyText } from "../lib/exportReport";
 
-const linkStyles = {
-  color: "rgb(37 99 235)",
-  textDecoration: "underline",
-  textUnderlineOffset: "2px",
-} as const;
+function CodeBlock({ language, code }: { language: string; code: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="my-4 overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
+      <div className="flex items-center justify-between border-b border-white/10 px-4 py-1.5">
+        <span className="font-mono text-xs text-slate-400">{language || "code"}</span>
+        <button
+          onClick={async () => {
+            if (await copyText(code)) {
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1600);
+            }
+          }}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1 font-mono text-xs text-slate-300 transition hover:bg-white/10 hover:text-white"
+          aria-label="Copy code block"
+        >
+          {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <pre className="overflow-x-auto p-4 font-mono text-[13px] leading-relaxed text-slate-100">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
+function textOf(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join("");
+  if (node && typeof node === "object" && "props" in node) {
+    return textOf((node as { props: { children?: ReactNode } }).props.children);
+  }
+  return "";
+}
 
 const components = {
-  h1: ({ children }: { children?: React.ReactNode }) => (
-    <h1 className="text-2xl font-bold mt-5 mb-3 text-gray-900 first:mt-0">{children}</h1>
+  h1: ({ children }: { children?: ReactNode }) => (
+    <h1 className="mb-3 mt-6 border-b border-slate-100 pb-2 text-[22px] font-bold tracking-tight text-slate-900 first:mt-0">
+      {children}
+    </h1>
   ),
-  h2: ({ children }: { children?: React.ReactNode }) => (
-    <h2 className="text-xl font-bold mt-4 mb-2 text-gray-900 first:mt-0">{children}</h2>
+  h2: ({ children }: { children?: ReactNode }) => (
+    <h2 className="mb-2 mt-5 text-lg font-bold tracking-tight text-slate-900 first:mt-0">
+      {children}
+    </h2>
   ),
-  h3: ({ children }: { children?: React.ReactNode }) => (
-    <h3 className="text-lg font-bold mt-3 mb-2 text-gray-900 first:mt-0">{children}</h3>
+  h3: ({ children }: { children?: ReactNode }) => (
+    <h3 className="mb-2 mt-4 text-[15px] font-bold text-slate-900 first:mt-0">{children}</h3>
   ),
-  h4: ({ children }: { children?: React.ReactNode }) => (
-    <h4 className="text-base font-bold mt-3 mb-2 text-gray-900 first:mt-0">{children}</h4>
+  h4: ({ children }: { children?: ReactNode }) => (
+    <h4 className="mb-1.5 mt-3 text-sm font-bold text-slate-900 first:mt-0">{children}</h4>
   ),
-  p: ({ children }: { children?: React.ReactNode }) => (
-    <p className="my-3 text-gray-800 leading-relaxed first:mt-0 last:mb-0">{children}</p>
+  p: ({ children }: { children?: ReactNode }) => (
+    <p className="my-2.5 text-[15px] leading-relaxed text-slate-700 first:mt-0 last:mb-0">
+      {children}
+    </p>
   ),
-  strong: ({ children }: { children?: React.ReactNode }) => (
-    <strong className="font-bold text-gray-900">{children}</strong>
+  strong: ({ children }: { children?: ReactNode }) => (
+    <strong className="font-semibold text-slate-900">{children}</strong>
   ),
-  em: ({ children }: { children?: React.ReactNode }) => (
-    <em className="italic text-gray-800">{children}</em>
+  em: ({ children }: { children?: ReactNode }) => (
+    <em className="text-slate-600">{children}</em>
   ),
-  ul: ({ children }: { children?: React.ReactNode }) => (
-    <ul className="list-disc list-outside ml-6 my-3 space-y-1 text-gray-800">{children}</ul>
+  ul: ({ children }: { children?: ReactNode }) => (
+    <ul className="my-2.5 ml-1 space-y-1.5 text-[15px] text-slate-700">
+      {children}
+    </ul>
   ),
-  ol: ({ children }: { children?: React.ReactNode }) => (
-    <ol className="list-decimal list-outside ml-6 my-3 space-y-1 text-gray-800">{children}</ol>
+  ol: ({ children }: { children?: ReactNode }) => (
+    <ol className="my-2.5 ml-1 list-decimal space-y-1.5 pl-5 text-[15px] text-slate-700 [counter-reset:item]">
+      {children}
+    </ol>
   ),
-  li: ({ children }: { children?: React.ReactNode }) => (
-    <li className="leading-relaxed">{children}</li>
-  ),
-  blockquote: ({ children }: { children?: React.ReactNode }) => (
-    <blockquote className="border-l-4 border-gray-300 pl-4 my-3 text-gray-600 italic">
+  li: ({ children, ...props }: { children?: ReactNode; className?: string }) => {
+    const cls = (props as { className?: string }).className || "";
+    if (cls.includes("task-list-item")) {
+      return <li className="list-none [&>input]:mr-2 [&>input]:accent-indigo-600">{children}</li>;
+    }
+    return (
+      <li className="relative list-none pl-6 leading-relaxed before:absolute before:left-1 before:top-[0.62em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-brand-400">
+        {children}
+      </li>
+    );
+  },
+  blockquote: ({ children }: { children?: ReactNode }) => (
+    <blockquote className="my-3 rounded-r-xl border-l-[3px] border-brand-300 bg-brand-50/60 py-2 pl-4 pr-3 text-[15px] text-slate-600">
       {children}
     </blockquote>
   ),
-  code: ({ children }: { children?: React.ReactNode }) => (
-    <code className="bg-gray-100 text-pink-600 rounded px-1 py-0.5 text-sm font-mono">
-      {children}
-    </code>
-  ),
-  pre: ({ children }: { children?: React.ReactNode }) => (
-    <pre className="bg-gray-900 text-gray-100 rounded-lg p-4 my-3 overflow-x-auto text-sm font-mono">
-      {children}
-    </pre>
-  ),
-  a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer" style={linkStyles}>
+  code: ({
+    children,
+    className,
+  }: {
+    children?: ReactNode;
+    className?: string;
+  }) => {
+    if (className) {
+      // Fenced block: rendered by the `pre` override below; keep raw text.
+      return <code className={className}>{children}</code>;
+    }
+    return (
+      <code className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[13px] text-slate-800 ring-1 ring-slate-200">
+        {children}
+      </code>
+    );
+  },
+  pre: ({ children }: { children?: ReactNode }) => {
+    // Extract language + raw code from the nested <code className="language-x">.
+    let language = "";
+    const code = textOf(children);
+    const walk = (node: ReactNode): void => {
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (node && typeof node === "object" && "props" in node) {
+        const p = (node as { props: { className?: string } }).props;
+        if (p.className?.startsWith("language-")) language = p.className.slice(9);
+      }
+    };
+    walk(children);
+    return <CodeBlock language={language} code={code.replace(/\n$/, "")} />;
+  },
+  a: ({ href, children }: { href?: string; children?: ReactNode }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="font-medium text-brand-600 underline decoration-brand-200 underline-offset-2 hover:text-brand-700 hover:decoration-brand-400"
+    >
       {children}
     </a>
   ),
-  hr: () => <hr className="my-4 border-gray-200" />,
-  table: ({ children }: { children?: React.ReactNode }) => (
-    <div className="overflow-x-auto my-3">
-      <table className="min-w-full border-collapse text-sm text-gray-800">{children}</table>
+  hr: () => <hr className="my-5 border-slate-200" />,
+  table: ({ children }: { children?: ReactNode }) => (
+    <div className="nice-scroll my-4 overflow-x-auto rounded-xl border border-slate-200">
+      <table className="min-w-full border-collapse text-sm text-slate-700">{children}</table>
     </div>
   ),
-  th: ({ children }: { children?: React.ReactNode }) => (
-    <th className="border border-gray-300 bg-gray-100 px-3 py-2 text-left font-bold">
+  thead: ({ children }: { children?: ReactNode }) => (
+    <thead className="bg-slate-50">{children}</thead>
+  ),
+  th: ({ children }: { children?: ReactNode }) => (
+    <th className="border-b border-slate-200 px-3.5 py-2.5 text-left text-[13px] font-semibold text-slate-900">
       {children}
     </th>
   ),
-  td: ({ children }: { children?: React.ReactNode }) => (
-    <td className="border border-gray-300 px-3 py-2">{children}</td>
+  td: ({ children }: { children?: ReactNode }) => (
+    <td className="border-b border-slate-100 px-3.5 py-2.5 align-top last:border-b-0">{children}</td>
   ),
 };
 
 export default function MarkdownRenderer({ content }: { content: string }) {
   return (
-    <div className="w-full">
+    <div className="w-full min-w-0">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>

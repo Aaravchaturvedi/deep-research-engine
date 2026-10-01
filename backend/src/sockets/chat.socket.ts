@@ -18,6 +18,14 @@ interface AuthedSocket extends Socket {
 }
 
 export function registerChatSocket(io: Server) {
+  // Best-effort run cancellation. `chat:stop` from the client marks the
+  // socket cancelled: queued BullMQ jobs are removed for real, in-flight
+  // runs finish server-side but their output is suppressed AND rolled back
+  // (persisted message deleted) so the user sees a clean stop with no
+  // phantom reply on reload. Single-instance in-memory state is fine here.
+  const cancelledSockets = new Set<string>();
+  const activeJobs = new Map<string, string>(); // socketId -> BullMQ jobId
+
   // Bridge worker events back to the originating socket.
   // Registered once here (not per-connection) to avoid listener leaks.
   // The worker has no socket handle, so every event carries socketId.
@@ -25,14 +33,29 @@ export function registerChatSocket(io: Server) {
   researchEvents.removeAllListeners("complete");
   researchEvents.removeAllListeners("failed");
   researchEvents.on("progress", ({ socketId, step }: any) => {
+    if (cancelledSockets.has(socketId)) return;
     io.to(socketId).emit("research:progress", { step });
   });
-  researchEvents.on("complete", ({ socketId, fullResponse }: any) => {
+  researchEvents.on("complete", async ({ socketId, fullResponse, messageId }: any) => {
+    activeJobs.delete(socketId);
+    if (cancelledSockets.has(socketId)) {
+      // Roll back the worker's DB write, then tell the client it stopped.
+      if (messageId) {
+        await prisma.message.delete({ where: { id: messageId } }).catch(() => {});
+      }
+      io.to(socketId).emit("chat:stopped", {});
+      return;
+    }
     // Keep frontend contract: one chunk + done (worker already saved to DB).
     io.to(socketId).emit("chat:chunk", { chunk: fullResponse });
     io.to(socketId).emit("chat:done", { fullResponse });
   });
   researchEvents.on("failed", ({ socketId, error }: any) => {
+    activeJobs.delete(socketId);
+    if (cancelledSockets.has(socketId)) {
+      io.to(socketId).emit("chat:stopped", {});
+      return;
+    }
     io.to(socketId).emit("chat:error", { error: error || "Research failed" });
   });
 
@@ -52,6 +75,9 @@ export function registerChatSocket(io: Server) {
     console.log("Client connected:", socket.id);
 
     socket.on("chat:message", async ({ message, sessionId }) => {
+      // A new run clears any previous stop request for this socket.
+      cancelledSockets.delete(socket.id);
+      activeJobs.delete(socket.id);
       try {
         const userId = socket.userId as string;
 
@@ -84,8 +110,10 @@ export function registerChatSocket(io: Server) {
             "research",
             { query: message, sessionId: session.id, socketId: socket.id },
             { attempts: 1, removeOnComplete: 100, removeOnFail: 100 }
-          );
-
+          ).then((job) => {
+            // Tracked so `chat:stop` can remove the job while still queued.
+            if (job?.id) activeJobs.set(socket.id, job.id);
+          });
           socket.emit("research:progress", { step: "Research queued, worker picked it up..." });
           return; // Stop here, don't run standard chat
         }
@@ -186,8 +214,15 @@ export function registerChatSocket(io: Server) {
 
         //route instead of calling Gemini directly
         for await (const chunkText of streamChatResponse(contents)) {
+          if (cancelledSockets.has(socket.id)) break;
           fullResponse += chunkText;
           socket.emit("chat:chunk", { chunk: chunkText });
+        }
+
+        if (cancelledSockets.has(socket.id)) {
+          // Stopped mid-stream: drop the partial reply entirely.
+          socket.emit("chat:stopped", {});
+          return;
         }
 
         await prisma.message.create({
@@ -210,8 +245,31 @@ export function registerChatSocket(io: Server) {
       }
     });
 
+    socket.on("chat:stop", async () => {
+      // Best-effort stop for the in-flight run on this socket.
+      cancelledSockets.add(socket.id);
+      const jobId = activeJobs.get(socket.id);
+      if (jobId) {
+        try {
+          const job = await researchQueue.getJob(jobId);
+          const state = await job?.getState();
+          // A still-queued job can be truly cancelled; an active one is
+          // handled by the cancelled-flag + rollback path above.
+          if (job && ["waiting", "delayed", "paused"].includes((state ?? "") as string)) {
+            await job.remove();
+            activeJobs.delete(socket.id);
+          }
+        } catch {
+          // Removal is best-effort; the cancelled flag still suppresses output.
+        }
+      }
+      socket.emit("chat:stopped", {});
+    });
+
     socket.on("disconnect", () => {
       console.log("Client disconnected:", socket.id);
+      cancelledSockets.delete(socket.id);
+      activeJobs.delete(socket.id);
     });
   });
 }

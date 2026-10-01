@@ -30,7 +30,7 @@ api.interceptors.response.use(
         store.dispatch(setAccessToken(res.data.accessToken));
         originalRequest.headers.Authorization = `Bearer ${res.data.accessToken}`;
         return api(originalRequest);
-      } catch (refreshErr) {
+      } catch {
         store.dispatch(logout());
       }
     }
