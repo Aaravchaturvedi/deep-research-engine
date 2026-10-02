@@ -207,7 +207,7 @@ deep-research-engine/
 │       ├── middleware/         # auth, rate limiter, error handler
 │       └── utils/              # jwt, llmRouter, vectorStore, tavily, weather, …
 ├── frontend/
-  ├── src/
+   ├── src/
    │   ├── pages/              # LoginPage, RegisterPage, ChatPage
    │   ├── components/         # Sidebar, ChatMessage, Composer, EmptyState,│   │   │                       # ProgressStepper, MarkdownRenderer, Toasts, …
    │   ├── features/           # auth + chat slices and API wrappers
