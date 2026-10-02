@@ -7,15 +7,14 @@
 [![Deploy](https://img.shields.io/badge/deploy-Docker%20Compose-2496ed)](#quickstart-docker-recommended)
 
 An end-to-end research assistant. Ask a quick question and get an instant streaming
-answer, or ask for a full investigation and get a cited, multi-section report —
-researched by an 8-agent LangGraph pipeline, grounded in live web sources and your
-own uploaded documents.
+answer, or ask for a full investigation and get a cited, multi-section report.
+Reports are produced by an 8-agent LangGraph pipeline grounded in live web
+sources and your own uploaded documents.
 
 ## Table of contents
 
 - [Why this exists](#why-this-exists)
 - [Features](#features)
-- [Benefits](#benefits)
 - [How it works](#how-it-works)
 - [Deep research pipeline](#deep-research-pipeline)
 - [Tech stack](#tech-stack)
@@ -30,43 +29,47 @@ own uploaded documents.
 - [Troubleshooting](#troubleshooting)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
-- [License](#license)
 
 ## Why this exists
 
 Chatbots answer from frozen training data and rarely show their work. Deep Research
 Engine closes that gap:
 
-1. **Live knowledge** — every research run searches the current web (Tavily) and can
-   pull live data (e.g. Open-Meteo for weather), so answers reflect 2026, not 2024.
-2. **Cited output** — a dedicated citation agent maps claims to sources, so reports
-   are verifiable instead of take-my-word-for-it.
-3. **Your documents count** — upload PDFs/TXTs/CSVs; they are chunked, embedded
+1. **Live knowledge.** Every research run searches the current web (Tavily) and can
+   pull live data (e.g. Open-Meteo for weather), so answers reflect the current
+   web rather than frozen training data.
+2. **Cited output.** A dedicated citation agent maps claims to sources, so reports
+   can be verified instead of taken on trust.
+3. **Your documents count.** Upload PDFs/TXTs/CSVs; they are chunked, embedded
    locally, stored in Qdrant, and used as primary context for follow-up questions.
-4. **Long jobs, honest UX** — research takes minutes. Jobs run in BullMQ workers
-   (the HTTP layer never blocks), progress streams over Socket.IO, and a Stop
-   button genuinely cancels — queued jobs are removed, in-flight output is
-   suppressed and rolled back.
+4. **Long jobs without blocking.** Research takes minutes. Jobs run in BullMQ
+   workers while the HTTP layer stays responsive, progress streams over Socket.IO,
+   and a Stop button cancels the run: queued jobs are removed, in-flight output
+   is suppressed and rolled back.
+
+Who it is for: anyone who needs instant answers and deep reports in one place,
+analysts who want repeatable cited reports as PDF, teams asking questions over
+internal PDFs, and developers looking for a typed, containerized agent reference.
 
 ## Features
 
 **Chat & research**
 
 - Instant streaming chat (Gemini with Groq routing/fallback) with history per session
-- Intent classification — quick questions answer immediately, research-grade
+- Intent classification: quick questions answer immediately, research-grade
   questions are queued to the background pipeline automatically
 - 8-agent deep research pipeline with reflection loop (re-searches until verified)
 - Live research progress timeline in the UI (Planning → Searching → Reading →
   Embedding → Writing → Verifying) with elapsed timer
-- Stop/cancel a run at any time — no phantom replies appear later
+- Stop/cancel a run at any time; stopped runs leave no partial reply behind
 - Regenerate, copy, and per-report export menu (PDF, Markdown)
 
 **Documents**
 
 - Upload PDF / TXT / CSV, chunked and embedded with a local model
-  (`Xenova/all-MiniLM-L6-v2`, 384-dim) — no embedding API costs
+  (`Xenova/all-MiniLM-L6-v2`, 384-dim); no embedding API costs
 - Session-scoped retrieval: questions are answered from the document you attached
-- Graceful degradation: chat and research still work if the vector DB is down
+- Resilient retrieval: chat and research still work if the vector DB is down
 
 **Workspace**
 
@@ -79,15 +82,6 @@ Engine closes that gap:
 - JWT access + rotating refresh tokens (httpOnly cookie), Redis-backed rate limiting
 - Single-origin production serving: one nginx on `:80` for SPA, REST, and WebSocket
 - Prisma migrations run automatically on backend boot
-
-## Benefits
-
-| For | What you get |
-| --- | ----------- |
-| Users | One box for instant answers and deep reports, with sources attached |
-| Researchers / analysts | Repeatable, cited market/topic reports in minutes, exportable to PDF |
-| Teams with private docs | Ask questions over internal PDFs without pasting them into prompts |
-| Developers | Clean agent graph, typed end-to-end, Docker Compose parity from laptop to server |
 
 ## How it works
 
@@ -124,9 +118,9 @@ Engine closes that gap:
 - **Deep research:** `chat:message` → intent=`research` → BullMQ job (worker,
   concurrency 1) → LangGraph pipeline → progress events → `chat:chunk` +
   `chat:done` with the final report, persisted as the assistant message.
-- **Stop:** `chat:stop` → queued job removed if still waiting; otherwise output
-  suppressed and the worker's saved message deleted — the UI shows “Stopped” and
-  nothing resurfaces on reload.
+- **Stop:** `chat:stop` removes the queued job if it is still waiting; otherwise
+  output is suppressed and the worker's saved message deleted. The UI reports
+  the stop and no partial reply is stored.
 - **Upload:** `POST /api/upload` (multer) → parse/chunk → local embeddings →
   Qdrant upsert with `sessionId` payload → system message confirms readiness.
 
@@ -141,12 +135,12 @@ Built with LangGraph (`backend/src/research/researchGraph.ts`):
 | 3 | Scraper | `scraper.agent.ts` | Fetches pages, extracts clean text chunks |
 | 4 | Retrieval | `retrieval.agent.ts` | Embeds chunks locally, upserts to Qdrant, retrieves top-k context |
 | 5 | Verification | `verification.agent.ts` | Cross-checks facts across sources |
-| 6 | Reflection | `reflection.agent.ts` | Judges completeness — loops back to Search if gaps remain |
+| 6 | Reflection | `reflection.agent.ts` | Judges completeness; loops back to Search if gaps remain |
 | 7 | Writer | `writer.agent.ts` | Drafts the structured report |
 | 8 | Citation | `citation.agent.ts` | Maps claims to sources, finalizes the report |
 
 Each agent emits a `research:progress` step that the frontend renders on its
-timeline. If the local embedding model ever fails to load, retrieval degrades to
+timeline. If the local embedding model fails to load, retrieval falls back to
 raw scraped context instead of failing the whole run.
 
 ## Tech stack
@@ -185,7 +179,6 @@ raw scraped context instead of failing the whole run.
 | ----- | ------ |
 | Reverse proxy + SPA host | nginx:alpine |
 | Orchestration | Docker Compose (redis, qdrant, backend, nginx) |
-| E2E | Playwright (`playwright_e2e/`, git-ignored local setup) |
 
 ## Repository structure
 
@@ -222,7 +215,6 @@ deep-research-engine/
 │   │   ├── lib/                # axios (env base URL + refresh), socket, exportReport
 │   │   └── app/store.ts        # Redux store
 │   └── index.html              # title, Inter font, theme color
-└── playwright_e2e/             # local-only Playwright smoke tests (git-ignored)
 ```
 
 ## Quickstart — Docker (recommended)
@@ -355,9 +347,6 @@ npm run preview        # serve the production build locally
 
 ## Testing
 
-- **E2E (Playwright):** `playwright_e2e/` holds the smoke spec and config. It is
-  intentionally local-only (git-ignored) — install and run it where you keep test
-  credentials, not in CI by default.
 - **Manual acceptance pass:** register → suggestion-card prompt → watch the
   progress stepper → report renders with citations → export PDF → upload a PDF →
   ask about it → rename/delete a chat → logout. At 390px width, the drawer and
@@ -367,16 +356,16 @@ npm run preview        # serve the production build locally
 
 ## Deployment notes
 
-- Only nginx publishes a host port (`80:80`), so host Redis/Qdrant for local dev
-  never clash with Compose services.
-- Backend is stateless except Postgres/Redis/Qdrant: scale it horizontally, but
-  keep BullMQ `concurrency: 1` per replica unless jobs are partitioned.
-- The embedding model downloads on first use (~90MB) — expect the first Retrieval
-  step to take 1–2 minutes, then it is cached.
+- Only nginx publishes a host port (`80:80`), so host Redis/Qdrant used for local
+  dev never clash with the Compose services.
+- Backend is stateless except Postgres/Redis/Qdrant: it can scale horizontally,
+  but keep BullMQ `concurrency: 1` per replica unless jobs are partitioned.
+- The embedding model downloads on first use (~90MB). Expect the first Retrieval
+  step to take 1–2 minutes; afterwards it is cached.
 - Moving off port 80: change the `ports` mapping **and** `CORS_ORIGIN` together
   (e.g. `"8080:80"` + `http://localhost:8080`), then `up -d`.
-- The single backend instance keeps in-memory cancel/run maps — fine as deployed;
-  revisit with Redis-backed state if you scale the backend.
+- Cancel/run state is kept in backend memory. That is sufficient for a single
+  instance; move it to Redis if the backend is scaled out.
 
 ## Troubleshooting
 
@@ -385,9 +374,9 @@ npm run preview        # serve the production build locally
 | `address already in use` on `:80` | Host nginx/Apache holds port 80 | `sudo systemctl stop nginx` (or remap to `8080:80` + matching `CORS_ORIGIN`) |
 | `host not found in upstream "backend"` + nginx restart loop | Stale nginx container never joined the Compose network | `docker compose up -d --force-recreate nginx` |
 | `Error loading shared library ld-linux-x86-64.so.2` | Alpine/musl image with onnxruntime | Use the provided Debian-slim `backend/Dockerfile` (already fixed) |
-| Research job fails, scrape warnings | Some sites block scraping | Normal — failed URLs are skipped, the rest of the pipeline continues |
-| Slow first `up --build` | `npm ci` ×2 + model-agnostic layers on slow net | Retry (layer cache resumes); never use `--no-cache` on slow links |
-| Login loops / 401s | Missing/expired secrets in `backend/.env` | Fill all six required vars, `up -d` again |
+| Research job fails, scrape warnings | Some sites block scraping | Expected: failed URLs are skipped and the pipeline continues with the rest |
+| Slow first `up --build` | `npm ci` ×2 plus base layers on a slow link | Retry; the layer cache resumes. Avoid `--no-cache` on slow links |
+| Login loops / 401s | Missing or expired secrets in `backend/.env` | Check the six required variables, then rerun `up -d` |
 
 ## Roadmap
 
@@ -405,8 +394,3 @@ npm run preview        # serve the production build locally
 3. Verify: backend `npx tsc --noEmit`, frontend `npm run build`, Compose
    `up -d --build` + `/health`, and the manual acceptance pass above.
 4. Keep secrets out of git — `backend/.env` is ignored; double-check diffs.
-
-## License
-
-ISC — see `backend/package.json`. If you publish or distribute this project,
-consider adding a top-level `LICENSE` file.
