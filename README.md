@@ -207,14 +207,13 @@ deep-research-engine/
 │       ├── middleware/         # auth, rate limiter, error handler
 │       └── utils/              # jwt, llmRouter, vectorStore, tavily, weather, …
 ├── frontend/
-│   ├── src/
-│   │   ├── pages/              # LoginPage, RegisterPage, ChatPage
-│   │   ├── components/         # Sidebar, ChatMessage, Composer, EmptyState,
-│   │   │                       # ProgressStepper, MarkdownRenderer, Toasts, …
-│   │   ├── features/           # auth + chat slices and API wrappers
-│   │   ├── lib/                # axios (env base URL + refresh), socket, exportReport
-│   │   └── app/store.ts        # Redux store
-│   └── index.html              # title, Inter font, theme color
+  ├── src/
+   │   ├── pages/              # LoginPage, RegisterPage, ChatPage
+   │   ├── components/         # Sidebar, ChatMessage, Composer, EmptyState,│   │   │                       # ProgressStepper, MarkdownRenderer, Toasts, …
+   │   ├── features/           # auth + chat slices and API wrappers
+   │   ├── lib/                # axios (env base URL + refresh), socket, exportReport
+   │   └── app/store.ts        # Redux store
+   └── index.html              # title, Inter font, theme color
 ```
 
 ## Quickstart — Docker (recommended)
