@@ -85,30 +85,37 @@ internal PDFs, and developers looking for a typed, containerized agent reference
 
 ## How it works
 
-```
-                        ┌──────────────────────────────────────────────┐
-                        │  nginx :80 (single origin)                   │
-  browser ─────────────▶│  /            → React SPA (static)            │
-                        │  /api/*       → backend:5000                 │
-                        │  /socket.io/* → backend:5000 (websocket)     │
-                        │  /health      → backend:5000                 │
-                        └──────────────┬───────────────────────────────┘
-                                       │
-              ┌────────────────────────┼────────────────────────┐
-              ▼                        ▼                        ▼
-     ┌────────────────┐      ┌────────────────┐      ┌────────────────┐
-     │ backend :5000  │─────▶│ Redis :6379    │      │ Qdrant :6333   │
-     │ Express +      │      │ BullMQ queue   │      │ 384-dim vectors│
-     │ Socket.IO +    │      │ rate-limit     │      │ research chunks│
-     │ BullMQ worker  │      │ store          │      │ + doc chunks   │
-     └───────┬────────┘      └────────────────┘      └────────────────┘
-             │  Prisma
-             ▼
-     ┌────────────────┐     ┌─────────────────────────────────────────┐
-     │ Postgres (Neon)│     │ External LLM/data APIs                  │
-     │ users, sessions│     │ Gemini · Groq · Tavily · Open-Meteo     │
-     │ messages       │     └─────────────────────────────────────────┘
-     └────────────────┘
+```mermaid
+flowchart TB
+    Browser["Browser\nReact SPA · http://localhost"] --> Nginx
+
+    subgraph Edge["Edge · port 80"]
+        Nginx["nginx\nstatic SPA + reverse proxy"]
+    end
+
+    Nginx -- "/ → SPA bundle" --> Browser
+    Nginx -- "/api/* · /health" --> Backend
+    Nginx -- "/socket.io/* · websocket" --> Backend
+
+    subgraph Stack["Docker Compose network"]
+        Backend["backend :5000\nExpress · Socket.IO · BullMQ worker"]
+        Redis[("Redis :6379\njob queue · rate limits")]
+        Qdrant[("Qdrant :6333\n384-dim vectors")]
+        Backend <--> Redis
+        Backend <--> Qdrant
+    end
+
+    Backend -- "Prisma" --> Postgres[("Postgres · Neon\nusers · sessions · messages")]
+    Backend -.- LLMs["External APIs\nGemini · Groq · Tavily · Open-Meteo"]
+
+    classDef edge fill:#eef2ff,stroke:#4f46e5,stroke-width:1.5px;
+    classDef svc fill:#f8fafc,stroke:#64748b,stroke-width:1.2px;
+    classDef data fill:#f0fdfa,stroke:#0d9488,stroke-width:1.2px;
+    classDef ext fill:#fffbeb,stroke:#d97706,stroke-width:1.2px,stroke-dasharray:5 3;
+    class Edge edge;
+    class Backend,Redis svc;
+    class Qdrant,Postgres data;
+    class LLMs ext;
 ```
 
 **Request flows**
