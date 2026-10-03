@@ -308,7 +308,7 @@ export default function ChatPage() {
                     <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/70 border-t-transparent" />
                   </span>
                   <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md border border-slate-200 bg-white px-4 py-3 shadow-[var(--shadow-card)] sm:px-5 sm:py-4">
-                    <div className="text-[15px] leading-relaxed text-slate-800">
+                    <div className="break-words text-[15px] leading-relaxed text-slate-800">
                       {streamingText}
                       <span className="ml-0.5 inline-block h-4 w-[7px] animate-pulse bg-brand-400 align-middle" />
                     </div>

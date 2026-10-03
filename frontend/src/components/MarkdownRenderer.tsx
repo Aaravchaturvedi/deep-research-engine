@@ -58,7 +58,7 @@ const components = {
     <h4 className="mb-1.5 mt-3 text-sm font-bold text-slate-900 first:mt-0">{children}</h4>
   ),
   p: ({ children }: { children?: ReactNode }) => (
-    <p className="my-2.5 text-[15px] leading-relaxed text-slate-700 first:mt-0 last:mb-0">
+    <p className="my-2.5 break-words text-[15px] leading-relaxed text-slate-700 first:mt-0 last:mb-0">
       {children}
     </p>
   ),
@@ -84,13 +84,13 @@ const components = {
       return <li className="list-none [&>input]:mr-2 [&>input]:accent-indigo-600">{children}</li>;
     }
     return (
-      <li className="relative list-none pl-6 leading-relaxed before:absolute before:left-1 before:top-[0.62em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-brand-400">
+      <li className="relative break-words list-none pl-6 leading-relaxed before:absolute before:left-1 before:top-[0.62em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-brand-400">
         {children}
       </li>
     );
   },
   blockquote: ({ children }: { children?: ReactNode }) => (
-    <blockquote className="my-3 rounded-r-xl border-l-[3px] border-brand-300 bg-brand-50/60 py-2 pl-4 pr-3 text-[15px] text-slate-600">
+    <blockquote className="my-3 break-words rounded-r-xl border-l-[3px] border-brand-300 bg-brand-50/60 py-2 pl-4 pr-3 text-[15px] text-slate-600">
       {children}
     </blockquote>
   ),
@@ -130,7 +130,7 @@ const components = {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="font-medium text-brand-600 underline decoration-brand-200 underline-offset-2 hover:text-brand-700 hover:decoration-brand-400"
+      className="break-all font-medium text-brand-600 underline decoration-brand-200 underline-offset-2 hover:text-brand-700 hover:decoration-brand-400"
     >
       {children}
     </a>
@@ -156,7 +156,7 @@ const components = {
 
 export default function MarkdownRenderer({ content }: { content: string }) {
   return (
-    <div className="w-full min-w-0">
+    <div className="w-full min-w-0 break-words">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>

@@ -107,7 +107,7 @@ export default function ChatMessage({
               <span className="whitespace-pre-wrap">{message.content.replace(/^📎 /, "")}</span>
             </p>
           ) : (
-            <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{message.content}</p>
+            <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">{message.content}</p>
           )}
         </div>
         <Avatar role="user" />
