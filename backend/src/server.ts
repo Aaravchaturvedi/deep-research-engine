@@ -8,7 +8,6 @@ import http from "http";
 import { Server } from "socket.io";
 import { prisma } from "./prisma/client";
 import authRoutes from "./routes/auth.routes";
-import chatRoutes from "./routes/chat.routes";
 import { apiLimiter } from "./middleware/rateLimiter.middleware";
 import { errorHandler } from "./middleware/errorHandler.middleware";
 import { requireAuth, AuthRequest } from "./middleware/auth.middleware";
@@ -43,7 +42,6 @@ app.get("/health", async (_req, res) => {
 app.use("/api",apiLimiter);
 
 app.use("/api/auth", authRoutes);
-app.use("/api/chat", chatRoutes); // keep the old REST endpoint as a fallback/for Day 6
 app.use("/api/sessions", sessionRoutes);
 app.use("/api/upload", uploadRoutes);
 

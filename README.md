@@ -55,7 +55,10 @@ internal PDFs, and developers looking for a typed, containerized agent reference
 
 **Chat & research**
 
-- Instant streaming chat (Gemini with Groq routing/fallback) with history per session
+- Instant streaming chat over Socket.IO with history per session. Primary model is
+  `gemini-3.5-flash-lite`; transient Gemini failures (429 / 5xx / network
+  errors) fall back to Groq (`qwen/qwen3.8-27b`). Auth/config errors
+  (400/401/403/404) fail fast without fallback — see `backend/src/utils/llmRouter.ts`
 - Intent classification: quick questions answer immediately, research-grade
   questions are queued to the background pipeline automatically
 - 8-agent deep research pipeline with reflection loop (re-searches until verified)
@@ -171,7 +174,7 @@ raw scraped context instead of failing the whole run.
 | API | Express + Socket.IO, cookie + Bearer auth |
 | Jobs | BullMQ worker (long lock, concurrency 1) on Redis |
 | Agents | LangChain Core + LangGraph state graph |
-| LLMs | Gemini (primary) with Groq routing/fallback |
+| LLMs | Gemini `gemini-3.5-flash-lite` (primary) with Groq `qwen/qwen3.8-27b` fallback on 429/5xx/network errors only, socket chat only (`backend/src/utils/llmRouter.ts`; research agents use Gemini directly with fail-forward) |
 | Search / live data | Tavily API, Open-Meteo (weather) |
 | Embeddings | `@xenova/transformers` + onnxruntime (local, zero API cost) |
 | Vectors | Qdrant (`research_chunks`, cosine, 384-dim) |
@@ -203,7 +206,7 @@ deep-research-engine/
 │   │   └── migrations/
 │   └── src/
 │       ├── server.ts           # Express + Socket.IO, CORS_ORIGIN env, /health, route mounts
-│       ├── routes/             # auth, chat, session (CRUD), upload
+│       ├── routes/             # auth, session (CRUD), upload
 │       ├── controllers/        # request handlers (incl. upload → embed → Qdrant)
 │       ├── sockets/chat.socket.ts  # chat:message flow, research:cancel/stop, event bridge
 │       ├── queues/researchQueue.ts # BullMQ queue + worker invoking the pipeline
@@ -284,7 +287,9 @@ Create `backend/.env` (never committed — gitignored):
 | `JWT_SECRET` | Yes | Signs short-lived access tokens |
 | `JWT_REFRESH_SECRET` | Yes | Signs rotating refresh-token cookie |
 | `GEMINI_API_KEY` | Yes | Primary LLM (chat, agents) |
-| `GROQ_API_KEY` | Yes | LLM routing/fallback |
+| `GROQ_API_KEY` | Yes | Fallback LLM for chat when Gemini is rate-limited/down |
+| `GEMINI_MODEL` | No | Override primary model (default `gemini-3.5-flash-lite`) |
+| `GROQ_CHAT_MODEL` | No | Override fallback model (default `qwen/qwen3.8-27b`) |
 | `TAVILY_API_KEY` | Yes | Web search for research + live answers |
 | `PORT` | No | Backend port (Compose sets `5000`) |
 | `REDIS_URL` | No | Compose sets `redis://redis:6379` |
@@ -311,7 +316,6 @@ interceptor.
 | POST | `/auth/refresh` | Cookie | Rotate tokens |
 | POST | `/auth/logout` | Yes | Clear refresh cookie |
 | GET | `/me` | Yes | Current user |
-| POST | `/chat` | Yes | One-shot REST chat (fallback path) |
 | GET | `/sessions` | Yes | List sessions (id, title, timestamps) |
 | GET | `/sessions/:id` | Yes | Session + messages |
 | PATCH | `/sessions/:id` | Yes | Rename (`{ title }`) |
