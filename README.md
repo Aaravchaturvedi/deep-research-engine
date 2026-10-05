@@ -63,7 +63,8 @@ internal PDFs, and developers looking for a typed, containerized agent reference
   questions are queued to the background pipeline automatically
 - 8-agent deep research pipeline with reflection loop (re-searches until verified)
 - Live research progress timeline in the UI (Planning → Searching → Reading →
-  Embedding → Writing → Verifying) with elapsed timer
+  Embedding → Writing → Verifying) with elapsed timer — research runs only;
+  quick chat shows a lightweight Thinking indicator instead
 - Stop/cancel a run at any time; stopped runs leave no partial reply behind
 - Regenerate, copy, and per-report export menu (PDF, Markdown)
 

@@ -28,6 +28,7 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [streamingText, setStreamingText] = useState("");
   const [progressStep, setProgressStep] = useState("");
+  const [isResearchRun, setIsResearchRun] = useState(false);
   const [runStartedAt, setRunStartedAt] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [uploading, setUploading] = useState(false);
@@ -75,6 +76,7 @@ export default function ChatPage() {
     streamingRef.current = "";
     setStreamingText("");
     setProgressStep("");
+    setIsResearchRun(false);
     dispatch(setLoading(false));
   }, [dispatch]);
 
@@ -99,6 +101,7 @@ export default function ChatPage() {
 
     socket.on("research:progress", (data) => {
       if (ignoreRef.current) return;
+      setIsResearchRun(true);
       setProgressStep(data.step);
     });
 
@@ -147,6 +150,7 @@ export default function ChatPage() {
       setRunStartedAt(Date.now());
       setNow(Date.now());
       setProgressStep("");
+      setIsResearchRun(false);
       getSocket().emit("chat:message", { message, sessionId });
       window.setTimeout(scrollToBottom, 50);
     },
@@ -316,8 +320,32 @@ export default function ChatPage() {
                 </div>
               )}
 
-              {loading && !streamingText && (
+              {loading && !streamingText && isResearchRun && progressStep && (
                 <ProgressStepper step={progressStep} startedAt={runStartedAt} now={now} />
+              )}
+
+              {loading && !streamingText && (!isResearchRun || !progressStep) && (
+                <div className="flex w-full gap-3 animate-fade-in">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-white">
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/70 border-t-transparent" />
+                  </span>
+                  <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md border border-slate-200 bg-white px-4 py-3 shadow-[var(--shadow-card)] sm:px-5 sm:py-4">
+                    <p className="flex items-center gap-1.5 text-[15px] text-slate-500">
+                      Thinking
+                      <span className="flex gap-1" aria-hidden>
+                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" />
+                        <span
+                          className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400"
+                          style={{ animationDelay: "150ms" }}
+                        />
+                        <span
+                          className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400"
+                          style={{ animationDelay: "300ms" }}
+                        />
+                      </span>
+                    </p>
+                  </div>
+                </div>
               )}
               <div ref={messagesEndRef} />
             </div>
